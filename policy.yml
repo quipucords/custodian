@@ -1,0 +1,317 @@
+# Cloud Custodian cleanup policies for the Red Hat Discovery AWS account.
+#
+# Before deploying, replace the placeholder value below with your account ID,
+# which setup.sh prints on completion. Or run:
+#   aws sts get-caller-identity --query Account --output text
+#
+# ROLE_ARN : arn:aws:iam::YOUR_ACCOUNT_ID:role/custodian-cleanup-role
+
+vars:
+  # Replace YOUR_ACCOUNT_ID with your 12-digit AWS account ID.
+  role: &role arn:aws:iam::YOUR_ACCOUNT_ID:role/custodian-cleanup-role
+
+  # Skips any resource tagged custodian:exempt = true.
+  # Apply this tag to anything that must never be touched automatically
+  # (Jenkins AMIs, long-lived supporting services, etc.).
+  keep-filter: &keep-filter
+    type: value
+    key: "tag:custodian:exempt"
+    value: "true"
+    op: ne
+
+  # Skips EC2 instances tagged custodian:stop-only = true.
+  # These are "pet" instances: they will be stopped if left running too long,
+  # but will NEVER be terminated regardless of how long they remain stopped.
+  # Use this tag for instances you need to keep around but don't want running
+  # unattended over weekends or holidays.
+  stop-only-filter: &stop-only-filter
+    type: value
+    key: "tag:custodian:stop-only"
+    value: "true"
+    op: ne
+
+policies:
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # EC2 INSTANCES
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # Stops "pet" instances (custodian:stop-only = true) that have been running
+  # for 24+ hours. These instances are never terminated — only stopped — so
+  # they can be restarted manually when needed. This prevents forgotten instances
+  # from running unattended over weekends or holidays while preserving their state.
+  - name: stop-long-running-pet-ec2
+    resource: ec2
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - State.Name: running
+      - type: value
+        key: "tag:custodian:stop-only"
+        value: "true"
+        op: eq
+      - type: instance-age
+        op: ge
+        days: 1
+    actions:
+      - stop
+
+
+  # Terminates running instances older than 7 days that are not exempt and not
+  # stop-only. CI instances are disposable; 7 days is a generous grace period.
+  - name: terminate-stale-running-ec2
+    resource: ec2
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - State.Name: running
+      - *keep-filter
+      - *stop-only-filter
+      - type: instance-age
+        op: ge
+        days: 7
+    actions:
+      - terminate
+
+
+  # Terminates stopped instances older than 2 days that are not exempt and not
+  # stop-only. A stopped instance still incurs EBS volume costs; in our CI
+  # context it is almost certainly abandoned, not intentionally paused.
+  # stop-only instances are explicitly excluded: they may remain stopped
+  # indefinitely and must never be terminated automatically.
+  - name: terminate-stale-stopped-ec2
+    resource: ec2
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - State.Name: stopped
+      - *keep-filter
+      - *stop-only-filter
+      - type: instance-age
+        op: ge
+        days: 2
+    actions:
+      - terminate
+
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # EBS VOLUMES & SNAPSHOTS
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # Deletes unattached volumes older than 3 days that are not exempt.
+  # Volumes in "available" state are not attached to any instance.
+  - name: delete-unattached-volumes
+    resource: ebs
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - State: available
+      - *keep-filter
+      - type: value
+        key: CreateTime
+        value_type: age
+        value: 3
+        op: ge
+    actions:
+      - delete
+
+
+  # Deletes our own snapshots older than 30 days that are not exempt.
+  # c7n automatically skips snapshots still backing a registered AMI.
+  - name: delete-old-snapshots
+    resource: ebs-snapshot
+    mode:
+      type: periodic
+      schedule: "rate(7 days)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - type: age
+        op: ge
+        days: 30
+    actions:
+      - delete
+
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # AMIs
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # Deregisters our own AMIs older than 90 days that are not exempt.
+  # delete-snapshots: true also removes the EBS snapshots backing the AMI.
+  # IMPORTANT: tag any AMI actively referenced by a running configuration with
+  # custodian:exempt = true to prevent premature deregistration.
+  - name: deregister-old-amis
+    resource: ami
+    mode:
+      type: periodic
+      schedule: "rate(7 days)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - type: image-age
+        op: ge
+        days: 90
+    actions:
+      - type: deregister
+        delete-snapshots: true
+
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # NETWORKING
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # Releases unassociated Elastic IPs that are not exempt.
+  # Unassociated EIPs cost ~$3.65/month each. They are commonly allocated
+  # accidentally through the EC2 console and forgotten.
+  # Note: there is no creation-time field on EIPs; any unassociated EIP is
+  # eligible unless tagged custodian:exempt = true.
+  - name: release-unassociated-eips
+    resource: elastic-ip
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - type: value
+        key: AssociationId
+        value: absent
+    actions:
+      - type: release
+
+
+  # Deletes detached (available) ENIs older than 1 day that are not exempt.
+  # ENIs are left behind after instance termination. The 1-day age avoids
+  # false positives from services that create ENIs transiently.
+  - name: delete-detached-enis
+    resource: eni
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - type: value
+        key: Status
+        value: available
+      - type: value
+        key: OwnerId
+        value: "{{account_id}}"
+      - type: value
+        key: Description
+        value: "^ELB "
+        op: not-regex              # skip ENIs managed by load balancers
+      - type: value
+        key: CreateTime
+        value_type: age
+        value: 1
+        op: ge
+    actions:
+      - delete
+
+
+  # Deletes NAT gateways older than 3 days that are not exempt.
+  # NAT gateways cost ~$32/month plus data charges. They can be created
+  # accidentally through the VPC wizard. Any intentional NAT gateway must
+  # be tagged custodian:exempt = true immediately after creation.
+  - name: delete-old-nat-gateways
+    resource: nat-gateway
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - State: available
+      - type: value
+        key: CreateTime
+        value_type: age
+        op: ge
+        value: 3
+    actions:
+      - delete
+
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # SECURITY GROUPS & KEY PAIRS
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # Deletes security groups not attached to any resource that are not exempt.
+  # The AWS console creates a new security group by default each time you step
+  # through the "Launch Instance" wizard.
+  # The `unused` filter checks ENIs, Lambda functions, ECS, CodeBuild, Batch,
+  # and cross-VPC peering before flagging a group as unused.
+  # Note: the default VPC security group cannot be deleted; AWS rejects it.
+  - name: delete-unused-security-groups
+    resource: security-group
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - type: unused
+    actions:
+      - delete
+
+
+  # Deletes key pairs not associated with any running or stopped EC2 instance
+  # or ASG launch configuration that are not exempt.
+  # c7n enforces that the `unused` filter must be present in this policy —
+  # the delete action raises a validation error at load time without it.
+  - name: delete-unused-key-pairs
+    resource: key-pair
+    mode:
+      type: periodic
+      schedule: "rate(7 days)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - type: unused
+        state: true
+    actions:
+      - delete
+
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # CLOUDWATCH LOG GROUPS
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # Deletes log groups that have had no activity in 30 days.
+  # These accumulate from: deleted Lambda functions, terminated EC2 instances
+  # running CloudWatch agents, and removed custodian policies.
+  # Active custodian Lambda log groups are safe: they receive writes on every
+  # scheduled run and will never exceed the 30-day threshold.
+  - name: delete-stale-log-groups
+    resource: log-group
+    mode:
+      type: periodic
+      schedule: "rate(7 days)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - type: last-write
+        days: 30
+    actions:
+      - delete

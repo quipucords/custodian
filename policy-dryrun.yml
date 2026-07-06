@@ -1,0 +1,244 @@
+# Cloud Custodian DRY-RUN policies.
+#
+# These are identical to policy.yml in every respect EXCEPT:
+#   - Policy names carry a "-dryrun" suffix (distinct Lambda functions)
+#   - All actions are removed — custodian queries and filters, then writes
+#     resources.json to S3 showing what it found, but takes no action.
+#
+# Use this to observe custodian's behavior before enabling destructive actions.
+# Deploy with: deploy-dryrun.sh
+# Switch to live: custodian run -r all --output-dir s3://BUCKET/output policy.yml
+# Remove dry-run Lambdas: python cloud-custodian/tools/ops/mugc.py -c policy-dryrun.yml -r all
+#
+# Replace YOUR_ACCOUNT_ID with your 12-digit AWS account ID (same as policy.yml).
+
+vars:
+  role: &role arn:aws:iam::YOUR_ACCOUNT_ID:role/custodian-cleanup-role
+
+  keep-filter: &keep-filter
+    type: value
+    key: "tag:custodian:exempt"
+    value: "true"
+    op: ne
+
+  stop-only-filter: &stop-only-filter
+    type: value
+    key: "tag:custodian:stop-only"
+    value: "true"
+    op: ne
+
+policies:
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # EC2 INSTANCES
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - name: stop-long-running-pet-ec2-dryrun
+    resource: ec2
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - State.Name: running
+      - type: value
+        key: "tag:custodian:stop-only"
+        value: "true"
+        op: eq
+      - type: instance-age
+        op: ge
+        days: 1
+    actions: []
+
+  - name: terminate-stale-running-ec2-dryrun
+    resource: ec2
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - State.Name: running
+      - *keep-filter
+      - *stop-only-filter
+      - type: instance-age
+        op: ge
+        days: 7
+    actions: []
+
+  - name: terminate-stale-stopped-ec2-dryrun
+    resource: ec2
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - State.Name: stopped
+      - *keep-filter
+      - *stop-only-filter
+      - type: instance-age
+        op: ge
+        days: 2
+    actions: []
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # EBS VOLUMES & SNAPSHOTS
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - name: delete-unattached-volumes-dryrun
+    resource: ebs
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - State: available
+      - *keep-filter
+      - type: value
+        key: CreateTime
+        value_type: age
+        value: 3
+        op: ge
+    actions: []
+
+  - name: delete-old-snapshots-dryrun
+    resource: ebs-snapshot
+    mode:
+      type: periodic
+      schedule: "rate(7 days)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - type: age
+        op: ge
+        days: 30
+    actions: []
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # AMIs
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - name: deregister-old-amis-dryrun
+    resource: ami
+    mode:
+      type: periodic
+      schedule: "rate(7 days)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - type: image-age
+        op: ge
+        days: 90
+    actions: []
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # NETWORKING
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - name: release-unassociated-eips-dryrun
+    resource: elastic-ip
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - type: value
+        key: AssociationId
+        value: absent
+    actions: []
+
+  - name: delete-detached-enis-dryrun
+    resource: eni
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - type: value
+        key: Status
+        value: available
+      - type: value
+        key: OwnerId
+        value: "{{account_id}}"
+      - type: value
+        key: Description
+        value: "^ELB "
+        op: not-regex
+      - type: value
+        key: CreateTime
+        value_type: age
+        value: 1
+        op: ge
+    actions: []
+
+  - name: delete-old-nat-gateways-dryrun
+    resource: nat-gateway
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - State: available
+      - type: value
+        key: CreateTime
+        value_type: age
+        op: ge
+        value: 3
+    actions: []
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # SECURITY GROUPS & KEY PAIRS
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - name: delete-unused-security-groups-dryrun
+    resource: security-group
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - type: unused
+    actions: []
+
+  - name: delete-unused-key-pairs-dryrun
+    resource: key-pair
+    mode:
+      type: periodic
+      schedule: "rate(7 days)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - type: unused
+        state: true
+    actions: []
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # CLOUDWATCH LOG GROUPS
+  # ════════════════════════════════════════════════════════════════════════════
+
+  - name: delete-stale-log-groups-dryrun
+    resource: log-group
+    mode:
+      type: periodic
+      schedule: "rate(7 days)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - type: last-write
+        days: 30
+    actions: []
