@@ -1,14 +1,21 @@
-# Cloud Custodian cleanup policies for the Red Hat Discovery AWS account.
-#
-# Before deploying, replace the placeholder value below with your account ID,
-# which setup.sh prints on completion. Or run:
-#   aws sts get-caller-identity --query Account --output text
-#
-# ROLE_ARN : arn:aws:iam::YOUR_ACCOUNT_ID:role/custodian-cleanup-role
+{#
+  Cloud Custodian policy template for the Red Hat Discovery AWS account.
 
+  Rendered by deploy.sh or render-policy.py — do not edit policy.yml or
+  policy-dryrun.yml directly; edit this file instead.
+
+  Variables:
+    account_id  — AWS account ID (12-digit string)
+    dryrun      — boolean; True = observation only (no destructive actions)
+
+  In dry-run mode:
+    - Policy names carry a "-dryrun" suffix so live and dry-run Lambdas
+      can coexist without name collision.
+    - All actions blocks are empty (resources are identified but not acted on).
+#}
+{% set suffix = '-dryrun' if dryrun else '' %}
 vars:
-  # Replace YOUR_ACCOUNT_ID with your 12-digit AWS account ID.
-  role: &role arn:aws:iam::YOUR_ACCOUNT_ID:role/custodian-cleanup-role
+  role: &role arn:aws:iam::{{ account_id }}:role/custodian-cleanup-role
 
   # Skips any resource tagged custodian:exempt = true.
   # Apply this tag to anything that must never be touched automatically
@@ -38,9 +45,8 @@ policies:
 
   # Stops "pet" instances (custodian:stop-only = true) that have been running
   # for 24+ hours. These instances are never terminated — only stopped — so
-  # they can be restarted manually when needed. This prevents forgotten instances
-  # from running unattended over weekends or holidays while preserving their state.
-  - name: stop-long-running-pet-ec2
+  # they can be restarted manually when needed.
+  - name: stop-long-running-pet-ec2{{ suffix }}
     resource: ec2
     mode:
       type: periodic
@@ -58,12 +64,16 @@ policies:
         op: ge
         days: 1
     actions:
+{% if dryrun %}
+      []
+{% else %}
       - stop
+{% endif %}
 
 
   # Terminates running instances older than 7 days that are not exempt and not
   # stop-only. CI instances are disposable; 7 days is a generous grace period.
-  - name: terminate-stale-running-ec2
+  - name: terminate-stale-running-ec2{{ suffix }}
     resource: ec2
     mode:
       type: periodic
@@ -78,15 +88,18 @@ policies:
         op: ge
         days: 7
     actions:
+{% if dryrun %}
+      []
+{% else %}
       - terminate
+{% endif %}
 
 
   # Terminates stopped instances older than 2 days that are not exempt and not
-  # stop-only. A stopped instance still incurs EBS volume costs; in our CI
-  # context it is almost certainly abandoned, not intentionally paused.
+  # stop-only. A stopped instance still incurs EBS volume costs.
   # stop-only instances are explicitly excluded: they may remain stopped
   # indefinitely and must never be terminated automatically.
-  - name: terminate-stale-stopped-ec2
+  - name: terminate-stale-stopped-ec2{{ suffix }}
     resource: ec2
     mode:
       type: periodic
@@ -101,7 +114,11 @@ policies:
         op: ge
         days: 2
     actions:
+{% if dryrun %}
+      []
+{% else %}
       - terminate
+{% endif %}
 
 
   # ════════════════════════════════════════════════════════════════════════════
@@ -110,7 +127,7 @@ policies:
 
   # Deletes unattached volumes older than 3 days that are not exempt.
   # Volumes in "available" state are not attached to any instance.
-  - name: delete-unattached-volumes
+  - name: delete-unattached-volumes{{ suffix }}
     resource: ebs
     mode:
       type: periodic
@@ -126,12 +143,16 @@ policies:
         value: 3
         op: ge
     actions:
+{% if dryrun %}
+      []
+{% else %}
       - delete
+{% endif %}
 
 
   # Deletes our own snapshots older than 30 days that are not exempt.
   # c7n automatically skips snapshots still backing a registered AMI.
-  - name: delete-old-snapshots
+  - name: delete-old-snapshots{{ suffix }}
     resource: ebs-snapshot
     mode:
       type: periodic
@@ -144,7 +165,11 @@ policies:
         op: ge
         days: 30
     actions:
+{% if dryrun %}
+      []
+{% else %}
       - delete
+{% endif %}
 
 
   # ════════════════════════════════════════════════════════════════════════════
@@ -155,7 +180,7 @@ policies:
   # delete-snapshots: true also removes the EBS snapshots backing the AMI.
   # IMPORTANT: tag any AMI actively referenced by a running configuration with
   # custodian:exempt = true to prevent premature deregistration.
-  - name: deregister-old-amis
+  - name: deregister-old-amis{{ suffix }}
     resource: ami
     mode:
       type: periodic
@@ -168,8 +193,12 @@ policies:
         op: ge
         days: 90
     actions:
+{% if dryrun %}
+      []
+{% else %}
       - type: deregister
         delete-snapshots: true
+{% endif %}
 
 
   # ════════════════════════════════════════════════════════════════════════════
@@ -177,11 +206,8 @@ policies:
   # ════════════════════════════════════════════════════════════════════════════
 
   # Releases unassociated Elastic IPs that are not exempt.
-  # Unassociated EIPs cost ~$3.65/month each. They are commonly allocated
-  # accidentally through the EC2 console and forgotten.
-  # Note: there is no creation-time field on EIPs; any unassociated EIP is
-  # eligible unless tagged custodian:exempt = true.
-  - name: release-unassociated-eips
+  # Unassociated EIPs cost ~$3.65/month each.
+  - name: release-unassociated-eips{{ suffix }}
     resource: elastic-ip
     mode:
       type: periodic
@@ -194,13 +220,17 @@ policies:
         key: AssociationId
         value: absent
     actions:
+{% if dryrun %}
+      []
+{% else %}
       - type: release
+{% endif %}
 
 
   # Deletes detached (available) ENIs older than 1 day that are not exempt.
   # ENIs are left behind after instance termination. The 1-day age avoids
   # false positives from services that create ENIs transiently.
-  - name: delete-detached-enis
+  - name: delete-detached-enis{{ suffix }}
     resource: eni
     mode:
       type: periodic
@@ -214,25 +244,28 @@ policies:
         value: available
       - type: value
         key: OwnerId
-        value: "{{account_id}}"
-      - type: value
-        key: Description
-        value: "^ELB "
-        op: not-regex              # skip ENIs managed by load balancers
+        value: "{{ account_id }}"
+      - not:
+        - type: value
+          key: Description
+          value: "^ELB "
+          op: regex
       - type: value
         key: CreateTime
         value_type: age
         value: 1
         op: ge
     actions:
+{% if dryrun %}
+      []
+{% else %}
       - delete
+{% endif %}
 
 
   # Deletes NAT gateways older than 3 days that are not exempt.
-  # NAT gateways cost ~$32/month plus data charges. They can be created
-  # accidentally through the VPC wizard. Any intentional NAT gateway must
-  # be tagged custodian:exempt = true immediately after creation.
-  - name: delete-old-nat-gateways
+  # NAT gateways cost ~$32/month plus data charges.
+  - name: delete-old-nat-gateways{{ suffix }}
     resource: nat-gateway
     mode:
       type: periodic
@@ -248,7 +281,11 @@ policies:
         op: ge
         value: 3
     actions:
+{% if dryrun %}
+      []
+{% else %}
       - delete
+{% endif %}
 
 
   # ════════════════════════════════════════════════════════════════════════════
@@ -258,10 +295,8 @@ policies:
   # Deletes security groups not attached to any resource that are not exempt.
   # The AWS console creates a new security group by default each time you step
   # through the "Launch Instance" wizard.
-  # The `unused` filter checks ENIs, Lambda functions, ECS, CodeBuild, Batch,
-  # and cross-VPC peering before flagging a group as unused.
   # Note: the default VPC security group cannot be deleted; AWS rejects it.
-  - name: delete-unused-security-groups
+  - name: delete-unused-security-groups{{ suffix }}
     resource: security-group
     mode:
       type: periodic
@@ -271,15 +306,22 @@ policies:
     filters:
       - *keep-filter
       - type: unused
+      - type: value
+        key: GroupName
+        value: default
+        op: ne
     actions:
+{% if dryrun %}
+      []
+{% else %}
       - delete
+{% endif %}
 
 
   # Deletes key pairs not associated with any running or stopped EC2 instance
   # or ASG launch configuration that are not exempt.
-  # c7n enforces that the `unused` filter must be present in this policy —
-  # the delete action raises a validation error at load time without it.
-  - name: delete-unused-key-pairs
+  # c7n enforces that the `unused` filter must be present in this policy.
+  - name: delete-unused-key-pairs{{ suffix }}
     resource: key-pair
     mode:
       type: periodic
@@ -291,7 +333,11 @@ policies:
       - type: unused
         state: true
     actions:
+{% if dryrun %}
+      []
+{% else %}
       - delete
+{% endif %}
 
 
   # ════════════════════════════════════════════════════════════════════════════
@@ -299,11 +345,9 @@ policies:
   # ════════════════════════════════════════════════════════════════════════════
 
   # Deletes log groups that have had no activity in 30 days.
-  # These accumulate from: deleted Lambda functions, terminated EC2 instances
+  # These accumulate from deleted Lambda functions, terminated EC2 instances
   # running CloudWatch agents, and removed custodian policies.
-  # Active custodian Lambda log groups are safe: they receive writes on every
-  # scheduled run and will never exceed the 30-day threshold.
-  - name: delete-stale-log-groups
+  - name: delete-stale-log-groups{{ suffix }}
     resource: log-group
     mode:
       type: periodic
@@ -314,4 +358,8 @@ policies:
       - type: last-write
         days: 30
     actions:
+{% if dryrun %}
+      []
+{% else %}
       - delete
+{% endif %}

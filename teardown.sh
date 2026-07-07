@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+# Cloud Custodian - Teardown script
+#
+# Permanently removes everything created by setup.sh and deploy-dryrun.sh:
+#   - All Lambda functions prefixed "custodian-"   (every AWS region)
+#   - All EventBridge rules prefixed "custodian-"  (every AWS region)
+#   - All CloudWatch log groups "/aws/lambda/custodian-*" (every AWS region)
+#   - The S3 output bucket and ALL its contents
+#   - The IAM role and all its attached/inline policies
+#   - The SSM parameter /custodian/output-bucket-name
+#
+# Safe to run more than once — every step checks whether the resource exists
+# before attempting deletion.
+#
+# Usage:
+#   chmod +x teardown.sh
+#   ./teardown.sh
+
+set -euo pipefail
+
+ROLE_NAME="custodian-cleanup-role"
+SSM_BUCKET_PARAM="/custodian/output-bucket-name"
+PRIMARY_REGION="us-east-2"
+
+# ── Confirm identity ─────────────────────────────────────────────────────────────
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+echo "=================================================="
+echo " Cloud Custodian Teardown"
+echo "=================================================="
+echo " AWS Account ID : $ACCOUNT_ID"
+echo ""
+echo " This will PERMANENTLY delete:"
+echo "   - All Lambda functions matching 'custodian-*' in every region"
+echo "   - All EventBridge rules matching 'custodian-*' in every region"
+echo "   - All CloudWatch log groups '/aws/lambda/custodian-*' in every region"
+echo "   - The S3 output bucket and ALL its contents"
+echo "   - The IAM role '$ROLE_NAME' and all its policies"
+echo "   - The SSM parameter '$SSM_BUCKET_PARAM'"
+echo ""
+read -rp " Type 'yes' to confirm: " CONFIRM
+if [ "$CONFIRM" != "yes" ]; then
+    echo " Teardown cancelled."
+    exit 0
+fi
+echo ""
+
+
+# ── Resolve bucket name NOW, before we delete SSM ───────────────────────────────
+BUCKET=$(aws ssm get-parameter \
+    --name "$SSM_BUCKET_PARAM" \
+    --region "$PRIMARY_REGION" \
+    --query 'Parameter.Value' \
+    --output text 2>/dev/null || true)
+
+
+# ── Lambda Functions, EventBridge Rules, CloudWatch Log Groups ──────────────────
+echo ">>> Scanning all regions for custodian resources..."
+echo "    (Checking every available region — this takes about a minute.)"
+echo ""
+
+REGIONS=$(aws ec2 describe-regions --query 'Regions[].RegionName' --output text)
+FOUND_SOMETHING=false
+
+for region in $REGIONS; do
+
+    fns=$(aws lambda list-functions \
+        --region "$region" \
+        --query 'Functions[?starts_with(FunctionName, `custodian-`)].FunctionName' \
+        --output text 2>/dev/null || true)
+
+    rules=$(aws events list-rules \
+        --name-prefix "custodian-" \
+        --region "$region" \
+        --query 'Rules[].Name' \
+        --output text 2>/dev/null || true)
+
+    log_groups=$(aws logs describe-log-groups \
+        --log-group-name-prefix "/aws/lambda/custodian-" \
+        --region "$region" \
+        --query 'logGroups[].logGroupName' \
+        --output text 2>/dev/null || true)
+
+    # Skip regions that have nothing — avoid printing dozens of empty lines
+    if [ -z "$fns" ] && [ -z "$rules" ] && [ -z "$log_groups" ]; then
+        continue
+    fi
+
+    FOUND_SOMETHING=true
+    echo "    === $region ==="
+
+    # EventBridge rules: remove targets first (required), then delete rule
+    for rule in $rules; do
+        target_ids=$(aws events list-targets-by-rule \
+            --rule "$rule" \
+            --region "$region" \
+            --query 'Targets[].Id' \
+            --output text 2>/dev/null || true)
+
+        if [ -n "$target_ids" ]; then
+            # shellcheck disable=SC2086
+            aws events remove-targets \
+                --rule "$rule" \
+                --region "$region" \
+                --ids $target_ids \
+                > /dev/null 2>&1 || true
+        fi
+
+        aws events delete-rule \
+            --name "$rule" \
+            --region "$region" \
+            2>/dev/null || true
+        echo "        Deleted EventBridge rule:  $rule"
+    done
+
+    # Lambda functions
+    for fn in $fns; do
+        aws lambda delete-function \
+            --function-name "$fn" \
+            --region "$region" \
+            2>/dev/null || true
+        echo "        Deleted Lambda function:   $fn"
+    done
+
+    # CloudWatch log groups
+    for lg in $log_groups; do
+        aws logs delete-log-group \
+            --log-group-name "$lg" \
+            --region "$region" \
+            2>/dev/null || true
+        echo "        Deleted log group:         $lg"
+    done
+
+done
+
+if [ "$FOUND_SOMETHING" = false ]; then
+    echo "    Nothing found — already removed or never deployed."
+fi
+echo ""
+
+
+# ── S3 Bucket ───────────────────────────────────────────────────────────────────
+echo ">>> S3 Bucket"
+
+if [ -z "$BUCKET" ]; then
+    echo "    SSM parameter was not found; bucket name is unknown."
+    echo "    If a bucket was created, locate and delete it manually."
+elif aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
+    echo "    Emptying and deleting: $BUCKET"
+    aws s3 rb "s3://${BUCKET}" --force
+    echo "    Done."
+else
+    echo "    Bucket '$BUCKET' not found (already deleted?)."
+fi
+echo ""
+
+
+# ── IAM Role ─────────────────────────────────────────────────────────────────────
+# A role cannot be deleted while policies are attached. We remove all inline
+# policies and detach all managed policies before deleting the role itself.
+
+echo ">>> IAM Role: $ROLE_NAME"
+
+if aws iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
+
+    # Delete all inline policies
+    inline_policies=$(aws iam list-role-policies \
+        --role-name "$ROLE_NAME" \
+        --query 'PolicyNames[]' \
+        --output text 2>/dev/null || true)
+
+    for policy_name in $inline_policies; do
+        aws iam delete-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$policy_name"
+        echo "    Deleted inline policy: $policy_name"
+    done
+
+    # Detach any managed policies
+    managed_policies=$(aws iam list-attached-role-policies \
+        --role-name "$ROLE_NAME" \
+        --query 'AttachedPolicies[].PolicyArn' \
+        --output text 2>/dev/null || true)
+
+    for policy_arn in $managed_policies; do
+        aws iam detach-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-arn "$policy_arn"
+        echo "    Detached managed policy: $policy_arn"
+    done
+
+    aws iam delete-role --role-name "$ROLE_NAME"
+    echo "    Deleted role."
+
+else
+    echo "    Role '$ROLE_NAME' not found (already deleted?)."
+fi
+echo ""
+
+
+# ── SSM Parameter ────────────────────────────────────────────────────────────────
+echo ">>> SSM Parameter: $SSM_BUCKET_PARAM"
+
+if aws ssm get-parameter --name "$SSM_BUCKET_PARAM" --region "$PRIMARY_REGION" &>/dev/null; then
+    aws ssm delete-parameter --name "$SSM_BUCKET_PARAM" --region "$PRIMARY_REGION"
+    echo "    Deleted."
+else
+    echo "    Not found (already deleted?)."
+fi
+echo ""
+
+
+# ── Done ─────────────────────────────────────────────────────────────────────────
+echo "=================================================="
+echo " Teardown complete."
+echo "=================================================="
+echo ""
+echo " All Cloud Custodian resources removed from account $ACCOUNT_ID."
+echo " Running setup.sh again will start fresh from scratch."
+echo ""

@@ -26,9 +26,10 @@ ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
 # Using an account-ID-based name would leak the account ID to anyone who
 # discovers the bucket name (DNS probing, leaked logs, etc.).
 # SSM is the source of truth; the same bucket is used on every run.
-if aws ssm get-parameter --name "$SSM_BUCKET_PARAM" &>/dev/null; then
+if aws ssm get-parameter --name "$SSM_BUCKET_PARAM" --region "$PRIMARY_REGION" &>/dev/null; then
     BUCKET_NAME=$(aws ssm get-parameter \
         --name "$SSM_BUCKET_PARAM" \
+        --region "$PRIMARY_REGION" \
         --query 'Parameter.Value' \
         --output text)
 else
@@ -36,6 +37,7 @@ else
     BUCKET_NAME="redhat-discovery-custodian-${UUID}"
     aws ssm put-parameter \
         --name  "$SSM_BUCKET_PARAM" \
+        --region "$PRIMARY_REGION" \
         --value "$BUCKET_NAME" \
         --type  "String" \
         --description "Cloud Custodian output S3 bucket name — do not change"
@@ -137,7 +139,6 @@ aws iam put-role-policy \
             },
             {
                 \"Sid\": \"CrossServiceRead\",
-                \"Comment\": \"Required by the unused security-group filter to check ECS, CodeBuild, and Batch\",
                 \"Effect\": \"Allow\",
                 \"Action\": [
                     \"ecs:ListClusters\",
@@ -156,7 +157,7 @@ aws iam put-role-policy \
                     \"logs:CreateLogStream\",
                     \"logs:PutLogEvents\"
                 ],
-                \"Resource\": \"arn:aws:logs:*:${ACCOUNT_ID}:log-group:/aws/lambda/custodian-*\"
+                \"Resource\": \"arn:aws:logs:*:${ACCOUNT_ID}:log-group:/aws/lambda/custodian-*:*\"
             },
             {
                 \"Sid\": \"LogGroupManagement\",
@@ -270,6 +271,6 @@ echo "    custodian run --dryrun -r all --output-dir ./dryrun-output policy.yml"
 echo "    Review ./dryrun-output/*/resources.json before proceeding."
 echo ""
 echo " 4. Deploy Lambda functions to all regions:"
-echo "    BUCKET=\$(aws ssm get-parameter --name ${SSM_BUCKET_PARAM} --query 'Parameter.Value' --output text)"
+echo "    BUCKET=\$(aws ssm get-parameter --name ${SSM_BUCKET_PARAM} --region ${PRIMARY_REGION} --query 'Parameter.Value' --output text)"
 echo "    custodian run -r all --output-dir s3://\${BUCKET}/output policy.yml"
 echo ""

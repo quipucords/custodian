@@ -132,7 +132,7 @@ Create a virtual environment and install c7n, pinned to the version tested with 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install c7n==0.9.51
+pip install c7n==0.9.51 jinja2
 custodian version
 ```
 
@@ -238,7 +238,7 @@ See [Understanding S3 Output](#understanding-s3-output) below for a full explana
 
 ```bash
 BUCKET=$(aws ssm get-parameter --name /custodian/output-bucket-name \
-    --query 'Parameter.Value' --output text)
+    --region us-east-2 --query 'Parameter.Value' --output text)
 
 # List all files written by dry-run runs (non-empty runs only)
 aws s3 ls s3://${BUCKET}/dryrun-output/ --recursive | grep resources.json
@@ -265,7 +265,7 @@ Once the team is satisfied that the findings are correct:
 ```bash
 # 1. Deploy the live policies
 BUCKET=$(aws ssm get-parameter --name /custodian/output-bucket-name \
-    --query 'Parameter.Value' --output text)
+    --region us-east-2 --query 'Parameter.Value' --output text)
 custodian run -r all --output-dir s3://${BUCKET}/output policy.yml
 
 # 2. Remove the dry-run Lambda functions (they are no longer needed)
@@ -419,7 +419,7 @@ All commands below require the bucket name. Resolve it once per session:
 
 ```bash
 BUCKET=$(aws ssm get-parameter --name /custodian/output-bucket-name \
-    --query 'Parameter.Value' --output text)
+    --region us-east-2 --query 'Parameter.Value' --output text)
 ```
 
 ### Check whether a policy has run and found anything
@@ -515,7 +515,7 @@ custodian run --dryrun -r all --output-dir ./local-dryrun policy.yml
 
 # 3. Deploy
 BUCKET=$(aws ssm get-parameter --name /custodian/output-bucket-name \
-    --query 'Parameter.Value' --output text)
+    --region us-east-2 --query 'Parameter.Value' --output text)
 custodian run -r all --output-dir s3://${BUCKET}/output policy.yml
 ```
 
