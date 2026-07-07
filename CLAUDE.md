@@ -2,7 +2,7 @@
 
 ## Project Purpose
 
-This project deploys [cloud-custodian (c7n)](https://cloudcustodian.io/) to automatically clean up stale and unclaimed AWS resources in the Red Hat Discovery team's AWS account. Policies run as Lambda functions on a schedule and enforce tag-driven retention rules across all AWS regions.
+This project deploys [cloud-custodian (c7n)](https://cloudcustodian.io/) to automatically clean up stale and unclaimed AWS resources in the team's AWS account. Policies run as Lambda functions on a schedule and enforce tag-driven retention rules across all AWS regions.
 
 ## Repository Layout
 
@@ -21,16 +21,16 @@ This project deploys [cloud-custodian (c7n)](https://cloudcustodian.io/) to auto
 
 ## Our Team and Use Case
 
-**Team:** Red Hat Discovery engineering team. Discovery is a product that ships as container images customers install in their own networks.
+**Team:** Red Hat engineers who maintain both [quipucords](https://github.com/quipucords/quipucords) (the open-source upstream) and Red Hat Discovery (the downstream product). Discovery is Red Hat's rebrand and rebuild of quipucords, shipped as container images that customers install in their own networks.
 
 **AWS account purpose:** Full-admin account for running integration and e2e tests. Workloads include:
-- Disposable EC2 instances created/destroyed during CI runs (Discovery itself)
+- Disposable EC2 instances created/destroyed during CI runs (quipucords and Discovery)
 - Jenkins workers running on custom base AMIs
 - Supporting services (HashiCorp Vault, Ansible Automation Platform, etc.)
 
 **Problem solved:** Automated, tag-driven cleanup runs on a schedule (Lambda + EventBridge) targeting EC2 instances, AMIs, EBS volumes/snapshots, EIPs, ENIs, NAT gateways, security groups, key pairs, and CloudWatch log groups. Resources tagged `custodian:exempt = true` are never touched; resources tagged `custodian:stop-only = true` are stopped but never terminated.
 
-**Contact:** Brad Smith, principal software engineer on the Discovery team.
+**Contact:** Brad Smith, principal software engineer on the quipucords/Discovery team.
 
 ## Working Conventions
 

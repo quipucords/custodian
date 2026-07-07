@@ -1,5 +1,5 @@
 # Cloud Custodian Setup Guide
-## Red Hat Discovery — AWS Account Automated Cleanup
+## quipucords / Red Hat Discovery — AWS Account Automated Cleanup
 
 ---
 
