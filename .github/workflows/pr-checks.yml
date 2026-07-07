@@ -4,6 +4,16 @@ name: PR Checks
 on:
   pull_request:
 
+# Poison AWS credentials workflow-wide so no job can accidentally reach real
+# AWS infrastructure. Any boto3 or aws-cli call will fail fast rather than
+# silently hitting the real account. /dev/null blocks file-based auth.
+env:
+  AWS_ACCESS_KEY_ID: AKIAIOSFODNN7EXAMPLE
+  AWS_SECRET_ACCESS_KEY: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+  AWS_SESSION_TOKEN: ""
+  AWS_SHARED_CREDENTIALS_FILE: /dev/null
+  AWS_CONFIG_FILE: /dev/null
+
 jobs:
   lint-python:
     name: Python — ruff
