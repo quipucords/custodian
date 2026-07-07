@@ -14,6 +14,7 @@ This project deploys [cloud-custodian (c7n)](https://cloudcustodian.io/) to auto
 | `deploy.sh` | Deploys Lambda functions to all regions (`--dryrun` or `--live`) |
 | `invoke-now.py` | Manually triggers all custodian Lambdas in a region immediately |
 | `s3-summary.py` | Reads Lambda run output from S3 and prints a compact resource summary |
+| `prune-orphans.py` | Removes Lambda functions and EventBridge rules for policies deleted from `policy.yml.j2` |
 | `cleanup-dryrun.sh` | Removes dry-run Lambda functions and EventBridge rules after going live |
 | `teardown.sh` | Removes all resources created by `setup.sh` and `deploy.sh` |
 | `tests/` | pytest suite for policy template rendering and s3-summary helpers |

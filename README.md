@@ -25,6 +25,7 @@ For our use case, c7n runs as a set of **AWS Lambda functions** triggered by **E
 | `deploy.sh` | Deploys Lambda functions to all AWS regions. Requires `--dryrun` or `--live` flag. |
 | `invoke-now.py` | Manually triggers all custodian Lambda functions in a region immediately, without waiting for the schedule. |
 | `s3-summary.py` | Reads S3 output from Lambda runs and prints a compact per-resource summary. |
+| `prune-orphans.py` | Removes Lambda functions and EventBridge rules for policies deleted from `policy.yml.j2`. |
 | `cleanup-dryrun.sh` | Removes dry-run Lambda functions and EventBridge rules after going live. |
 | `teardown.sh` | Removes **all** resources created by `setup.sh` and `deploy.sh`. Use for test account cleanup. |
 | `tests/` | pytest suite covering policy template rendering and s3-summary helpers. |
@@ -476,12 +477,16 @@ No configuration change is needed. `deploy.sh` queries all available regions at 
 
 ### Removing a policy
 
-Delete the policy block from `policy.yml.j2` and redeploy. The Lambda function and EventBridge rule for the removed policy are **not deleted by redeployment** — they remain in place and will continue to fire on schedule until explicitly removed. Remove them manually:
+Delete the policy block from `policy.yml.j2` and redeploy. The Lambda function and EventBridge rule for the removed policy are **not deleted by redeployment** — they remain in place and will continue to fire on schedule until explicitly removed.
+
+`prune-orphans.py` automates this: it renders the current template, compares the expected function names against what is actually deployed across all regions, and removes the difference.
 
 ```bash
-aws lambda delete-function --function-name custodian-<policy-name> --region us-east-2
-aws events remove-targets --rule custodian-<policy-name> --region us-east-2 --ids custodian-<policy-name>
-aws events delete-rule --name custodian-<policy-name> --region us-east-2
+# Preview what would be removed
+uv run prune-orphans.py --dry-run
+
+# Remove orphaned functions and rules across all regions
+uv run prune-orphans.py
 ```
 
 ---
