@@ -6,9 +6,8 @@ Useful for getting immediate S3 output without waiting for the EventBridge
 schedule. Functions are invoked asynchronously so they all run in parallel.
 
 Usage:
-    source .venv/bin/activate
-    python3 invoke-now.py us-east-1
-    python3 invoke-now.py us-east-1 --dry-run    # just lists, does not invoke
+    uv run invoke-now.py us-east-1
+    uv run invoke-now.py us-east-1 --dry-run    # just lists, does not invoke
 """
 
 import argparse
@@ -42,7 +41,7 @@ def main():
 
     if not functions:
         print(f"No Lambda functions starting with '{args.prefix}' found in {args.region}.")
-        print("Have you run deploy-dryrun.sh yet?")
+        print("Have you run './deploy.sh --dryrun' yet?")
         sys.exit(1)
 
     verb = "Would trigger" if args.dry_run else "Triggering"
