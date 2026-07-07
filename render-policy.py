@@ -43,15 +43,19 @@ def main():
         epilog=__doc__,
     )
     ap.add_argument(
-        "--dryrun", action="store_true",
+        "--dryrun",
+        action="store_true",
         help="Render in dry-run mode (no destructive actions, -dryrun name suffix)",
     )
     ap.add_argument(
-        "-o", "--output", metavar="FILE",
+        "-o",
+        "--output",
+        metavar="FILE",
         help="Write rendered policy to FILE instead of stdout",
     )
     ap.add_argument(
-        "--account-id", metavar="ID",
+        "--account-id",
+        metavar="ID",
         help="AWS account ID (default: fetched from STS)",
     )
     args = ap.parse_args()

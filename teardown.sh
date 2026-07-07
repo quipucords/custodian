@@ -45,14 +45,12 @@ if [ "$CONFIRM" != "yes" ]; then
 fi
 echo ""
 
-
 # ── Resolve bucket name NOW, before we delete SSM ───────────────────────────────
 BUCKET=$(aws ssm get-parameter \
     --name "$SSM_BUCKET_PARAM" \
     --region "$PRIMARY_REGION" \
     --query 'Parameter.Value' \
     --output text 2>/dev/null || true)
-
 
 # ── Lambda Functions, EventBridge Rules, CloudWatch Log Groups ──────────────────
 echo ">>> Scanning all regions for custodian resources..."
@@ -64,6 +62,7 @@ FOUND_SOMETHING=false
 
 for region in $REGIONS; do
 
+    # shellcheck disable=SC2016  # backticks are JMESPath syntax, not shell substitution
     fns=$(aws lambda list-functions \
         --region "$region" \
         --query 'Functions[?starts_with(FunctionName, `custodian-`)].FunctionName' \
@@ -103,7 +102,7 @@ for region in $REGIONS; do
                 --rule "$rule" \
                 --region "$region" \
                 --ids $target_ids \
-                > /dev/null 2>&1 || true
+                >/dev/null 2>&1 || true
         fi
 
         aws events delete-rule \
@@ -138,7 +137,6 @@ if [ "$FOUND_SOMETHING" = false ]; then
 fi
 echo ""
 
-
 # ── S3 Bucket ───────────────────────────────────────────────────────────────────
 echo ">>> S3 Bucket"
 
@@ -153,7 +151,6 @@ else
     echo "    Bucket '$BUCKET' not found (already deleted?)."
 fi
 echo ""
-
 
 # ── IAM Role ─────────────────────────────────────────────────────────────────────
 # A role cannot be deleted while policies are attached. We remove all inline
@@ -197,7 +194,6 @@ else
 fi
 echo ""
 
-
 # ── SSM Parameter ────────────────────────────────────────────────────────────────
 echo ">>> SSM Parameter: $SSM_BUCKET_PARAM"
 
@@ -208,7 +204,6 @@ else
     echo "    Not found (already deleted?)."
 fi
 echo ""
-
 
 # ── Done ─────────────────────────────────────────────────────────────────────────
 echo "=================================================="

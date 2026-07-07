@@ -26,21 +26,21 @@ FOUND_SOMETHING=false
 
 for region in $REGIONS; do
 
-    # Only functions/rules ending in -dryrun
+    # shellcheck disable=SC2016  # backticks are JMESPath syntax, not shell substitution
     fns=$(aws lambda list-functions \
         --region "$region" \
         --query 'Functions[?starts_with(FunctionName, `custodian-`)].FunctionName' \
-        --output text 2>/dev/null \
-        | tr '\t' '\n' \
-        | grep -- '-dryrun$' || true)
+        --output text 2>/dev/null |
+        tr '\t' '\n' |
+        grep -- '-dryrun$' || true)
 
     rules=$(aws events list-rules \
         --name-prefix "custodian-" \
         --region "$region" \
         --query 'Rules[].Name' \
-        --output text 2>/dev/null \
-        | tr '\t' '\n' \
-        | grep -- '-dryrun$' || true)
+        --output text 2>/dev/null |
+        tr '\t' '\n' |
+        grep -- '-dryrun$' || true)
 
     if [ -z "$fns" ] && [ -z "$rules" ]; then
         continue
@@ -62,7 +62,7 @@ for region in $REGIONS; do
                 --rule "$rule" \
                 --region "$region" \
                 --ids $target_ids \
-                > /dev/null 2>&1 || true
+                >/dev/null 2>&1 || true
         fi
         aws events delete-rule \
             --name "$rule" \

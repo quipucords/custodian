@@ -1,0 +1,14 @@
+# Upstream cloud-custodian clone — reference only, not part of this repo
+cloud-custodian/
+
+# Local custodian run output directories
+deploy-dryrun-logs/
+deploy-logs/
+dryrun-output/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
