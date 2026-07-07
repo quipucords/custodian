@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cloud Custodian - Teardown script
 #
-# Permanently removes everything created by setup.sh and deploy-dryrun.sh:
+# Permanently removes everything created by setup.sh and deploy.sh:
 #   - All Lambda functions prefixed "custodian-"   (every AWS region)
 #   - All EventBridge rules prefixed "custodian-"  (every AWS region)
 #   - All CloudWatch log groups "/aws/lambda/custodian-*" (every AWS region)

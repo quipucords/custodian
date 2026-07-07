@@ -148,7 +148,7 @@ if [ "$DRYRUN" = true ]; then
     echo "   python3 s3-summary.py --policy ec2"
     echo ""
     echo " When satisfied, go live:"
-    echo "   ./deploy.sh"
+    echo "   ./deploy.sh --live"
     echo ""
     echo " After going live, remove dry-run Lambdas:"
     echo "   # Render the dryrun policy list so mugc knows which functions to remove:"
