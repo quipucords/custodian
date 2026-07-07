@@ -6,20 +6,18 @@ Used directly by deploy.sh, but also useful for inspecting what will be
 deployed or running local custodian commands without going through deploy.sh.
 
 Usage:
-    source .venv/bin/activate
-
     # Render live policy to stdout
-    python3 render-policy.py
+    uv run render-policy.py
 
     # Render dry-run policy to stdout
-    python3 render-policy.py --dryrun
+    uv run render-policy.py --dryrun
 
     # Write to a file
-    python3 render-policy.py --dryrun -o /tmp/policy-dryrun.yml
+    uv run render-policy.py --dryrun -o /tmp/policy-dryrun.yml
 
     # Local dry-run test using the rendered output
-    python3 render-policy.py --dryrun | custodian run --dryrun -r us-east-1 \
-        --output-dir ./local-dryrun /dev/stdin
+    uv run render-policy.py --dryrun | \
+        uv run custodian run --dryrun -r us-east-1 --output-dir ./local-dryrun /dev/stdin
 """
 
 import argparse

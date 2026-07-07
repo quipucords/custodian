@@ -15,22 +15,37 @@ For our use case, c7n runs as a set of **AWS Lambda functions** triggered by **E
 
 ---
 
+## Files in This Repository
+
+| File | Purpose |
+|---|---|
+| `policy.yml.j2` | **Source of truth** — Jinja2 template for all 12 cleanup policies. Edit this file to change policy configuration. |
+| `render-policy.py` | Renders `policy.yml.j2` into a deployable YAML file. Called automatically by `deploy.sh`; also useful standalone. |
+| `setup.sh` | One-time AWS infrastructure setup (IAM role, S3 bucket, SSM parameter). Idempotent. |
+| `deploy.sh` | Deploys Lambda functions to all AWS regions. Requires `--dryrun` or `--live` flag. |
+| `invoke-now.py` | Manually triggers all custodian Lambda functions in a region immediately, without waiting for the schedule. |
+| `s3-summary.py` | Reads S3 output from Lambda runs and prints a compact per-resource summary. |
+| `cleanup-dryrun.sh` | Removes dry-run Lambda functions and EventBridge rules after going live. |
+| `teardown.sh` | Removes **all** resources created by `setup.sh` and `deploy.sh`. Use for test account cleanup. |
+
+---
+
 ## Architecture
 
-The following AWS resources are created by this setup:
+The following AWS resources are created by `setup.sh` and `deploy.sh`:
 
 | Resource | Name / Pattern | Purpose |
 |---|---|---|
 | IAM Role | `custodian-cleanup-role` | Lambda execution role with least-privilege permissions |
 | IAM Inline Policy | `custodian-cleanup-permissions` | Grants the role only the permissions it needs |
 | S3 Bucket | `redhat-discovery-custodian-{uuid}` | Stores structured output from every policy run |
-| SSM Parameter | `/custodian/output-bucket-name` | Stores the S3 bucket name; the source of truth for scripts |
-| Lambda Functions | `custodian-{policy-name}` per region | One function per policy per AWS region |
-| EventBridge Rules | `custodian-{policy-name}` per region | Triggers each Lambda on its configured schedule |
+| SSM Parameter | `/custodian/output-bucket-name` | Stores the S3 bucket name; the source of truth for all scripts |
+| Lambda Functions | `custodian-{policy-name}[-dryrun]` per region | One function per policy per AWS region |
+| EventBridge Rules | `custodian-{policy-name}[-dryrun]` per region | Triggers each Lambda on its configured schedule |
 
-`custodian run` creates and manages the Lambda functions and EventBridge rules automatically. You do not create them by hand.
+`deploy.sh` creates and manages the Lambda functions and EventBridge rules automatically. You do not create them by hand.
 
-The S3 bucket name uses a random UUID rather than the AWS account ID. This prevents the bucket name from leaking account identity through publicly routable DNS. The bucket name is stored in SSM Parameter Store and retrieved by scripts at runtime — you do not need to know or record it manually.
+The S3 bucket name uses a random UUID rather than the AWS account ID to avoid leaking account identity through publicly routable DNS. The bucket name is stored in SSM Parameter Store and retrieved by scripts at runtime — you do not need to know or record it manually.
 
 ---
 
@@ -70,7 +85,7 @@ There are no region-based or role-based exceptions. Any resource that must survi
 
 ## Policy Summary
 
-Twelve cleanup policies are configured in `policy.yml`. All run in every AWS region to catch accidental resource creation outside our primary region (us-east-2).
+Twelve cleanup policies are defined in `policy.yml.j2` and run in every AWS region to catch accidental resource creation outside the primary region (us-east-2).
 
 | Policy | Resource | Schedule | Trigger |
 |---|---|---|---|
@@ -90,8 +105,8 @@ Twelve cleanup policies are configured in `policy.yml`. All run in every AWS reg
 **Notes on specific policies:**
 
 - **`stop-long-running-pet-ec2`** only matches instances tagged `custodian:stop-only = true`. The terminate policies explicitly exclude those instances; they cannot be terminated automatically under any circumstance.
-- **Stopped instances (2 days):** A stopped instance still incurs EBS volume charges. Two days is enough time to notice and tag it if it is intentional.
-- **AMIs (90 days):** Generous to accommodate long-lived Jenkins pipelines. Any AMI actively referenced by infrastructure must be tagged `custodian:exempt = true`. Deregistering an AMI also deletes its backing EBS snapshots (`delete-snapshots: true`).
+- **Stopped instances (2 days):** A stopped instance still incurs EBS volume charges. Two days is enough time to notice and tag it if it was intentional.
+- **AMIs (90 days):** Generous to accommodate long-lived Jenkins pipelines. Any AMI actively referenced by infrastructure must be tagged `custodian:exempt = true`. Deregistering an AMI also deletes its backing EBS snapshots.
 - **Elastic IPs:** There is no creation-time field available for EIPs, so any unassociated EIP is immediately eligible. Tag any EIP you need to keep with `custodian:exempt = true`.
 - **NAT gateways (~$32/month):** Short 3-day threshold because the cost is immediate. Any intentional NAT gateway must be tagged on creation.
 - **Snapshot deletion** automatically skips snapshots that still back a registered AMI, so the snapshot and AMI policies are safe to run together.
@@ -119,21 +134,24 @@ Verify authentication:
 aws sts get-caller-identity
 ```
 
-### 2. Python 3.8 or later
+### 2. Python 3.10.2 or later
 
 ```bash
 python3 --version
 ```
 
-### 3. Cloud Custodian
+### 3. uv
 
-Create a virtual environment and install c7n, pinned to the version tested with this configuration:
+[uv](https://docs.astral.sh/uv/) manages the Python virtual environment and dependencies automatically. If not already installed:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install c7n==0.9.51 jinja2
-custodian version
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Dependencies are declared in `pyproject.toml` and pinned in `uv.lock`. No manual venv creation or `pip install` needed — `uv run` handles everything on first use:
+
+```bash
+uv run custodian version
 ```
 
 ---
@@ -159,44 +177,23 @@ The script creates:
   - 90-day object expiration (output logs auto-delete after 90 days)
 - SSM Parameter `/custodian/output-bucket-name` storing the bucket name for future use
 
-At the end, the script prints your role ARN and the exact deploy command to use.
+### Step 2 — Optional: local sanity check
 
-### Step 2 — Update policy files with your account ID
-
-Both `policy.yml` and `policy-dryrun.yml` need your 12-digit AWS account ID substituted in the `role` variable. The setup script prints this, or run:
+Before deploying any Lambda functions, you can render the policy template and run a one-shot local check directly from your terminal. This executes immediately, takes no action, and writes results to a local directory:
 
 ```bash
-aws sts get-caller-identity --query Account --output text
-```
-
-Edit the top of each file:
-
-```yaml
-vars:
-  role: &role arn:aws:iam::123456789012:role/custodian-cleanup-role
-  #                        ^^^^^^^^^^^^^ replace this in both files
-```
-
-### Step 3 — Quick local sanity check (optional)
-
-Before deploying any Lambda functions, you can run a one-shot local check directly from your terminal. This executes immediately using your local credentials, takes no action, and writes results to a local directory:
-
-```bash
-source .venv/bin/activate
-custodian run --dryrun -r all --output-dir ./local-dryrun policy.yml
+# Render the template to a temporary file and run a local dryrun
+uv run render-policy.py --dryrun | \
+    uv run custodian run --dryrun -r us-east-2 --output-dir ./local-dryrun /dev/stdin
 ```
 
 Inspect matches:
 
 ```bash
-# Which policies found something?
 find ./local-dryrun -name resources.json -not -empty
-
-# Inspect a specific result
-cat ./local-dryrun/us-east-2/terminate-stale-running-ec2/resources.json | python3 -m json.tool
 ```
 
-This is a fast sanity check but does not represent scheduled Lambda behavior. For a realistic observation period before going live, use the dry-run Lambda deployment described in the next section.
+This is a fast sanity check. For a realistic observation period using scheduled Lambda functions, proceed to the next section.
 
 ---
 
@@ -204,79 +201,100 @@ This is a fast sanity check but does not represent scheduled Lambda behavior. Fo
 
 Before deploying policies with destructive actions, it is strongly recommended to first deploy a **dry-run version** that runs on the same schedule as the live policies but takes no action. This lets the team observe exactly which resources c7n would target over a realistic period before pulling the trigger.
 
-### What the dry-run deployment does
-
-`policy-dryrun.yml` contains the same filters as `policy.yml` but with all `actions` removed. Deployed to Lambda, these functions will:
-
+In dry-run mode, Lambda functions:
 - Run on their configured schedules (daily and weekly)
 - Query AWS and apply all filters
 - Write structured output to S3 showing which resources matched
 - Take **no destructive action whatsoever**
 
-The dry-run Lambda functions are named with a `-dryrun` suffix (e.g., `custodian-terminate-stale-running-ec2-dryrun`) and coexist safely with the eventual live deployment.
+Dry-run Lambda functions use a `-dryrun` name suffix (e.g., `custodian-terminate-stale-running-ec2-dryrun`) and coexist safely with a later live deployment.
 
-### Deploy the dry-run Lambdas
+### Deploy dry-run Lambdas
 
 ```bash
-chmod +x deploy-dryrun.sh
-source .venv/bin/activate
-./deploy-dryrun.sh
+chmod +x deploy.sh
+./deploy.sh --dryrun
 ```
 
-The script resolves the bucket name from SSM, deploys all dry-run Lambda functions across all regions, and prints commands for reviewing findings and going live.
+This renders the policy template, then deploys Lambda functions to all AWS regions in parallel (8 at a time). Expect it to take 10–15 minutes.
+
+### Force an immediate run (don't wait for the schedule)
+
+After deployment, trigger all Lambda functions in a region immediately rather than waiting for their scheduled time:
+
+```bash
+uv run invoke-now.py us-east-2
+```
+
+Allow 1–2 minutes for the functions to complete, then check for output.
+
+### Review findings
+
+`s3-summary.py` reads the S3 output from Lambda runs and prints a compact one-line-per-resource summary:
+
+```bash
+# All findings across all regions (latest run per policy+region)
+uv run s3-summary.py
+
+# Filter to a specific region
+uv run s3-summary.py --region us-east-1
+
+# Filter to a specific resource type
+uv run s3-summary.py --policy ec2
+uv run s3-summary.py --policy snapshot
+
+# Show all historical runs, not just the latest
+uv run s3-summary.py --all-runs
+```
+
+Each row shows: region, policy name, resource ID, and resource name.
 
 ### How long to observe
 
-- **Daily policies** will have output within 24 hours of deployment.
+- **Daily policies** will have output within 24 hours.
 - **Weekly policies** (`delete-old-snapshots`, `deregister-old-amis`, `delete-unused-key-pairs`, `delete-stale-log-groups`) will have output within 7 days.
 
-For a thorough review, wait at least **one full week** before going live so every policy has fired at least once.
+For a thorough review, wait at least **one full week** before going live so every policy has fired at least once. Use `invoke-now.py` to trigger specific regions on demand if you don't want to wait for the schedule.
 
-### Reviewing dry-run findings
+If a policy produces no S3 output for a given region, either nothing matched or the Lambda has not yet fired. Check CloudWatch logs to confirm execution (see [CloudWatch Logs](#cloudwatch-logs) below).
 
-See [Understanding S3 Output](#understanding-s3-output) below for a full explanation of what is written and how to read it. The dry-run output lands under `dryrun-output/` in the S3 bucket:
+---
+
+## Going Live
+
+Once the team is satisfied with dry-run findings:
+
+### Step 1 — Deploy live Lambda functions
 
 ```bash
-BUCKET=$(aws ssm get-parameter --name /custodian/output-bucket-name \
-    --region us-east-2 --query 'Parameter.Value' --output text)
-
-# List all files written by dry-run runs (non-empty runs only)
-aws s3 ls s3://${BUCKET}/dryrun-output/ --recursive | grep resources.json
-
-# Inspect findings for a specific policy and region
-aws s3 cp \
-    "s3://${BUCKET}/dryrun-output/us-east-2/terminate-stale-running-ec2-dryrun/" \
-    ./review/ --recursive
-gunzip -c review/*/resources.json.gz | python3 -m json.tool
-
-# Tabular summary across recent days
-custodian report \
-    --source s3://${BUCKET}/dryrun-output \
-    --policy terminate-stale-running-ec2-dryrun \
-    --region us-east-2 --days 7 --format table
+./deploy.sh --live
 ```
 
-If a policy folder does not appear in S3, that policy found no matching resources — which either means the account is already clean for that resource type, or the Lambda has not yet fired. Check CloudWatch to confirm it ran (see [CloudWatch Logs](#cloudwatch-logs) below).
+This prompts for explicit confirmation, renders the live policy (with destructive actions enabled), and deploys Lambda functions across all regions. Resources matching cleanup criteria will be terminated or deleted on their configured schedules.
 
-### Going live
+### Step 2 — Remove dry-run Lambda functions
 
-Once the team is satisfied that the findings are correct:
+The dry-run Lambdas are no longer needed once live policies are deployed:
 
 ```bash
-# 1. Deploy the live policies
-BUCKET=$(aws ssm get-parameter --name /custodian/output-bucket-name \
-    --region us-east-2 --query 'Parameter.Value' --output text)
-custodian run -r all --output-dir s3://${BUCKET}/output policy.yml
+chmod +x cleanup-dryrun.sh
+./cleanup-dryrun.sh
+```
 
-# 2. Remove the dry-run Lambda functions (they are no longer needed)
-python cloud-custodian/tools/ops/mugc.py -c policy-dryrun.yml -r all
+This removes all `custodian-*-dryrun` Lambda functions and their EventBridge rules from every region. It does not touch live functions, the IAM role, the S3 bucket, or SSM. CloudWatch log groups for the removed dry-run Lambdas are left in place — the live `delete-stale-log-groups` policy will clean them up automatically after 30 days of inactivity.
+
+### Step 3 — Review what was acted on
+
+After the live Lambdas have run:
+
+```bash
+uv run s3-summary.py --prefix output
+uv run s3-summary.py --prefix output --region us-east-2
 ```
 
 ---
 
 ## Understanding S3 Output
-
-This section explains exactly what c7n writes to S3 after each Lambda execution, so you know where to look and what to expect.
 
 ### S3 path structure
 
@@ -314,9 +332,7 @@ Each region that contained matching resources produces its own set of files. Reg
 
 ### `resources.json.gz`
 
-The primary audit file. Contains the **full AWS API response object for every resource that matched all filters** — i.e., everything that was (or in dry-run mode, would have been) acted on.
-
-For an EC2 instance, each entry is the complete `describe-instances` response for that instance. c7n also appends a `c7n:MatchedFilters` key showing which specific filters caused it to be selected:
+The primary audit file. Contains the **full AWS API response object for every resource that matched all filters**. c7n also appends a `c7n:MatchedFilters` key showing which specific filters caused it to be selected:
 
 ```json
 [
@@ -325,82 +341,51 @@ For an EC2 instance, each entry is the complete `describe-instances` response fo
     "InstanceType": "t3.medium",
     "State": {"Code": 16, "Name": "running"},
     "LaunchTime": "2026-06-23T14:30:00+00:00",
-    "Placement": {"AvailabilityZone": "us-east-2a"},
-    "Tags": [
-      {"Key": "Name", "Value": "brad-test-june23"}
-    ],
+    "Tags": [{"Key": "Name", "Value": "brad-test-june23"}],
     "c7n:MatchedFilters": ["State.Name", "instance-age"]
   }
 ]
 ```
 
-The `c7n:MatchedFilters` field is particularly useful for understanding *why* a resource was selected — for example, whether it was age, missing tag, or both.
-
-**Resources that do not match are never recorded.** If your account has 50 EC2 instances and 2 are old enough and untagged to be flagged, `resources.json` contains only those 2. The other 48 leave no trace in S3.
+**Resources that do not match are never recorded.** If your account has 50 EC2 instances and 2 are flagged, `resources.json` contains only those 2.
 
 ### `metadata.json`
 
-Written alongside `resources.json`. Contains the policy definition as deployed, execution timing, API call counts, and resource match metrics:
-
-```json
-{
-  "policy": { "...full policy definition..." },
-  "version": "0.9.51",
-  "execution": {
-    "id": "a1b2c3d4-...",
-    "start": 1751462400.0,
-    "end_time": 1751462403.2,
-    "duration": 3.2
-  },
-  "api-stats": {
-    "ec2.DescribeInstances": 1
-  },
-  "metrics": {
-    "ResourceCount": 2,
-    "ResourceTime": 1.8
-  }
-}
-```
-
-Useful for confirming a policy ran successfully and checking how many resources matched (`ResourceCount`).
+Contains the policy definition, execution timing, API call counts, and resource match metrics. Useful for confirming a policy ran and checking `ResourceCount`.
 
 ### `action-{name}.json`
 
-Written only in the live deployment (`policy.yml`), not in dry-run mode. Contains the IDs and results for each resource that was actually acted on. For termination this is a list of instance IDs; for deletion it is volume or snapshot IDs, and so on. If an action produces no results (e.g., the action was skipped due to an error), this file is not written.
+Written only in live mode. Contains the IDs of resources that were actually acted on. Absent in dry-run runs.
 
 ### When nothing matches — no S3 output
 
-When a Lambda policy run finds zero matching resources, **nothing is written to S3** for that run. The Lambda still executes and logs to CloudWatch (see below), but there are no S3 files. A missing policy folder in S3 is therefore normal and expected for policies covering resource types that are currently clean.
+When a Lambda run finds zero matching resources, **nothing is written to S3** for that run. A missing policy folder is normal for clean regions.
 
 ---
 
 ## CloudWatch Logs
 
-Each Lambda function writes a short execution log to CloudWatch Logs under the log group `/aws/lambda/custodian-{policy-name}` in its region.
+Each Lambda function writes a short execution log to `/aws/lambda/custodian-{policy-name}` in its region.
 
-**On a run that found matching resources:**
+**Run that found matching resources:**
 ```
 policy:terminate-stale-running-ec2 resource:ec2 region:us-east-2 count:2 time:1.83
 ```
 
-**On a run that found nothing:**
+**Run that found nothing:**
 ```
 policy:terminate-stale-running-ec2 resources:ec2 region:us-east-2 no resources matched
 ```
 
-**On a live run after taking action:**
+**Live run after taking action:**
 ```
 policy:terminate-stale-running-ec2 action:terminate resources:2 execution_time:0.54
 ```
 
-### View logs for a specific policy
-
 ```bash
-# Stream recent logs (follow mode)
-aws logs tail \
-    /aws/lambda/custodian-terminate-stale-running-ec2 \
-    --region us-east-2 \
-    --follow
+# Stream recent logs for a policy
+aws logs tail /aws/lambda/custodian-terminate-stale-running-ec2 \
+    --region us-east-2 --follow
 
 # Search for a specific resource ID
 aws logs filter-log-events \
@@ -411,63 +396,21 @@ aws logs filter-log-events \
 
 ---
 
-## Viewing Live Output and Audit Trail
-
-### Resolve the bucket name
-
-All commands below require the bucket name. Resolve it once per session:
-
-```bash
-BUCKET=$(aws ssm get-parameter --name /custodian/output-bucket-name \
-    --region us-east-2 --query 'Parameter.Value' --output text)
-```
-
-### Check whether a policy has run and found anything
-
-```bash
-# List all output files (non-empty runs only)
-aws s3 ls s3://${BUCKET}/output/ --recursive | grep resources.json
-```
-
-### Inspect the latest findings for a policy
-
-```bash
-# Download and decompress
-aws s3 cp \
-    "s3://${BUCKET}/output/us-east-2/terminate-stale-running-ec2/" \
-    ./logs/ --recursive
-gunzip -c logs/*/resources.json.gz | python3 -m json.tool
-```
-
-### Generate a human-readable report
-
-The `custodian report` command reads historical output from S3 and summarizes findings across multiple runs:
-
-```bash
-# Table of all matched EC2 instances in the last 7 days
-custodian report \
-    --source s3://${BUCKET}/output \
-    --policy terminate-stale-running-ec2 \
-    --region us-east-2 \
-    --days 7 \
-    --format table
-
-# CSV export
-custodian report \
-    --source s3://${BUCKET}/output \
-    --policy terminate-stale-running-ec2 \
-    --region us-east-2 \
-    --days 30 \
-    --format csv > ec2-cleanup-report.csv
-```
-
----
-
 ## Viewing the Current Configuration
 
-### Source of truth: policy.yml
+### Source of truth: `policy.yml.j2`
 
-The `policy.yml` file in this directory is the authoritative definition of all active policies. It should be kept in version control. What is in this file is what c7n has deployed.
+`policy.yml.j2` is the authoritative definition of all cleanup policies. It should be kept in version control. `deploy.sh` renders it at deploy time — no separate policy files need to be maintained.
+
+To inspect what a deployment will use before running it:
+
+```bash
+# Preview the rendered live policy
+uv run render-policy.py
+
+# Preview the rendered dry-run policy
+uv run render-policy.py --dryrun
+```
 
 ### List deployed Lambda functions
 
@@ -505,35 +448,60 @@ aws events list-rules \
 
 ## Updating the Configuration
 
-To change any policy (thresholds, schedules, filters), edit `policy.yml` and redeploy. c7n compares checksums and patches Lambda functions in-place — they are not deleted and recreated.
+To change any policy (thresholds, schedules, filters, resource types):
+
+1. Edit `policy.yml.j2`
+2. Redeploy
 
 ```bash
-# 1. Edit policy.yml
+# Optional: preview the rendered policy before deploying
+uv run render-policy.py | head -60
 
-# 2. Optional: quick local check of the new thresholds
-custodian run --dryrun -r all --output-dir ./local-dryrun policy.yml
+# Redeploy dry-run to review the effect of changes
+./deploy.sh --dryrun
+uv run invoke-now.py us-east-2
+uv run s3-summary.py
 
-# 3. Deploy
-BUCKET=$(aws ssm get-parameter --name /custodian/output-bucket-name \
-    --region us-east-2 --query 'Parameter.Value' --output text)
-custodian run -r all --output-dir s3://${BUCKET}/output policy.yml
+# When satisfied, deploy live
+./deploy.sh --live
 ```
 
-Remember to apply the same change to `policy-dryrun.yml` if you want the dry-run configuration to stay in sync.
-
-Any team member with AWS admin access and c7n installed can run these commands from their local machine.
+`deploy.sh` compares checksums and patches Lambda functions in-place — unchanged functions are skipped. Any team member with AWS admin access and the dependencies installed can run these commands.
 
 ### Adding a new region
 
-No configuration change is needed. The next deploy with `-r all` automatically covers any newly available region.
+No configuration change is needed. `deploy.sh` queries all available regions at runtime and deploys to each automatically.
 
 ### Removing a policy
 
-Delete it from `policy.yml`, then remove the associated Lambda and EventBridge rule:
+Delete the policy block from `policy.yml.j2` and redeploy. The Lambda function and EventBridge rule for the removed policy will be left behind but inactive — they will not run because their EventBridge rules will no longer be updated. To clean them up explicitly, run `teardown.sh` and `setup.sh` again, or remove them manually:
 
 ```bash
-python cloud-custodian/tools/ops/mugc.py -c policy.yml -r all
+aws lambda delete-function --function-name custodian-<policy-name> --region us-east-2
+aws events remove-targets --rule custodian-<policy-name> --region us-east-2 --ids custodian-<policy-name>
+aws events delete-rule --name custodian-<policy-name> --region us-east-2
 ```
+
+---
+
+## Teardown
+
+To remove **all** Cloud Custodian resources from the AWS account (useful for test environments):
+
+```bash
+chmod +x teardown.sh
+./teardown.sh
+```
+
+This permanently deletes:
+- All Lambda functions prefixed `custodian-` (every region)
+- All EventBridge rules prefixed `custodian-` (every region)
+- All CloudWatch log groups prefixed `/aws/lambda/custodian-` (every region)
+- The S3 output bucket and all its contents
+- The IAM role `custodian-cleanup-role` and all its policies
+- The SSM parameter `/custodian/output-bucket-name`
+
+The script prompts for explicit confirmation and is safe to run more than once. Running `./setup.sh` afterwards starts fresh from scratch.
 
 ---
 
@@ -563,5 +531,5 @@ The output bucket enforces:
 - **No public access** — all four S3 public access block settings are enabled
 - **Opaque name** — uses a random UUID rather than the AWS account ID to avoid leaking account identity through bucket name DNS
 - **Encryption at rest** — AES-256 (SSE-S3) with bucket key enabled
-- **Encryption in transit** — bucket policy denies all non-HTTPS (`aws:SecureTransport: false`) requests
+- **Encryption in transit** — bucket policy denies all non-HTTPS requests
 - **Automatic expiration** — objects expire after 90 days to limit data retention

@@ -84,11 +84,11 @@ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 # ── Render the policy template ───────────────────────────────────────────────────
 echo ">>> Rendering policy.yml.j2..."
-RENDERED_POLICY=$(mktemp /tmp/custodian-policy-XXXXXX.yml)
+RENDERED_POLICY=$(mktemp /tmp/custodian-policy-XXXXXX)
 LOCKDIR=$(mktemp -d)
 trap 'rm -f "$RENDERED_POLICY"; rm -rf "$LOCKDIR"' EXIT
 
-python3 render-policy.py $RENDER_FLAG --account-id "$ACCOUNT_ID" -o "$RENDERED_POLICY"
+uv run python3 render-policy.py $RENDER_FLAG --account-id "$ACCOUNT_ID" -o "$RENDERED_POLICY"
 echo "    OK. (${RENDERED_POLICY})"
 echo ""
 
@@ -140,26 +140,24 @@ if [ "$DRYRUN" = true ]; then
     echo " They write matched resources to S3 but take no action."
     echo ""
     echo " Force an immediate run in a specific region:"
-    echo "   python3 invoke-now.py us-east-1"
+    echo "   uv run invoke-now.py us-east-1"
     echo ""
     echo " Review findings:"
-    echo "   python3 s3-summary.py"
-    echo "   python3 s3-summary.py --region us-east-1"
-    echo "   python3 s3-summary.py --policy ec2"
+    echo "   uv run s3-summary.py"
+    echo "   uv run s3-summary.py --region us-east-1"
+    echo "   uv run s3-summary.py --policy ec2"
     echo ""
     echo " When satisfied, go live:"
     echo "   ./deploy.sh --live"
     echo ""
     echo " After going live, remove dry-run Lambdas:"
-    echo "   # Render the dryrun policy list so mugc knows which functions to remove:"
-    echo "   python3 render-policy.py --dryrun -o /tmp/policy-dryrun.yml"
-    echo "   python cloud-custodian/tools/ops/mugc.py -c /tmp/policy-dryrun.yml -r all"
+    echo "   ./cleanup-dryrun.sh"
 else
     echo " Live policies are active. Resources matching cleanup criteria will be"
     echo " terminated or deleted on their configured schedules."
     echo ""
     echo " Review what was acted on:"
-    echo "   python3 s3-summary.py --prefix output"
-    echo "   python3 s3-summary.py --prefix output --region us-east-1"
+    echo "   uv run s3-summary.py --prefix output"
+    echo "   uv run s3-summary.py --prefix output --region us-east-1"
 fi
 echo ""

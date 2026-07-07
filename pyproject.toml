@@ -1,0 +1,9 @@
+[project]
+name = "redhat-discovery-custodian"
+version = "1.0.0"
+description = "Cloud Custodian cleanup policies for the Red Hat Discovery AWS account"
+requires-python = ">=3.10.2"
+dependencies = [
+    "c7n==0.9.51",
+    "jinja2>=3.0",
+]
