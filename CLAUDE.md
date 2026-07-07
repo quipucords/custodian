@@ -1,17 +1,23 @@
-# AWS IT Public Cloud — Cloud Custodian Research
+# AWS IT Public Cloud — Automated Resource Cleanup (c7n)
 
 ## Project Purpose
 
-This project evaluates [cloud-custodian (c7n)](https://cloudcustodian.io/) for managing resources in our Red Hat AWS account. The goal is to determine whether it suits our needs before committing to adoption.
+This project deploys [cloud-custodian (c7n)](https://cloudcustodian.io/) to automatically clean up stale and unclaimed AWS resources in the Red Hat Discovery team's AWS account. Policies run as Lambda functions on a schedule and enforce tag-driven retention rules across all AWS regions.
 
 ## Repository Layout
 
-```
-./cloud-custodian/        # Local clone of the upstream cloud-custodian repo
-./cloud-custodian/docs/   # Upstream documentation source (Sphinx)
-./cloud-custodian/c7n/    # Core Python package (policies, resources, actions, filters)
-./cloud-custodian/tools/  # Supporting tools (c7n-mailer, c7n-org, etc.)
-```
+| File | Purpose |
+|---|---|
+| `policy.yml.j2` | Jinja2 template defining all 12 cleanup policies — edit this to change policy behavior |
+| `render-policy.py` | Renders `policy.yml.j2` into a deployable YAML file |
+| `setup.sh` | One-time AWS infra setup: IAM role, S3 bucket, SSM parameter |
+| `deploy.sh` | Deploys Lambda functions to all regions (`--dryrun` or `--live`) |
+| `invoke-now.py` | Manually triggers all custodian Lambdas in a region immediately |
+| `s3-summary.py` | Reads Lambda run output from S3 and prints a compact resource summary |
+| `cleanup-dryrun.sh` | Removes dry-run Lambda functions and EventBridge rules after going live |
+| `teardown.sh` | Removes all resources created by `setup.sh` and `deploy.sh` |
+| `tests/` | pytest suite for policy template rendering and s3-summary helpers |
+| `cloud-custodian/` | Read-only upstream clone — reference source only, do not modify |
 
 ## Our Team and Use Case
 
@@ -22,30 +28,14 @@ This project evaluates [cloud-custodian (c7n)](https://cloudcustodian.io/) for m
 - Jenkins workers running on custom base AMIs
 - Supporting services (HashiCorp Vault, Ansible Automation Platform, etc.)
 
-**Problem to solve:** No tooling exists to automatically monitor and clean up stale/unclaimed AWS resources. Engineers currently terminate instances and delete volumes manually, which doesn't scale.
-
-**Desired behavior (tag-driven cleanup):**
-- Run on a schedule (cron-style, periodically)
-- Target: EC2 instances, AMIs, EBS volumes, EBS snapshots
-- If a resource has certain "keep" tags → do not touch it
-- Otherwise → check resource age; terminate/delete after a configured threshold
+**Problem solved:** Automated, tag-driven cleanup runs on a schedule (Lambda + EventBridge) targeting EC2 instances, AMIs, EBS volumes/snapshots, EIPs, ENIs, NAT gateways, security groups, key pairs, and CloudWatch log groups. Resources tagged `custodian:exempt = true` are never touched; resources tagged `custodian:stop-only = true` are stopped but never terminated.
 
 **Contact:** Brad Smith, principal software engineer on the Discovery team.
 
-## Research Focus Areas
-
-When helping with this project, keep the following evaluation questions in mind:
-
-1. **Fit** — Does c7n support the AWS resource types and operations we need?
-2. **Policy model** — How are YAML policies structured? What filters and actions are available?
-3. **Execution modes** — Pull (CLI), push (CloudTrail/Config events), periodic (Lambda/scheduled)?
-4. **Deployment** — How do policies get deployed and run in production (Lambda, ECS, local)?
-5. **Ops burden** — What does ongoing maintenance look like (upgrades, policy drift, alerting)?
-6. **Alternatives** — How does c7n compare to AWS Config Rules, Service Control Policies, or custom Lambda?
-
 ## Working Conventions
 
-- Primary source of truth for behavior is the source code under `./cloud-custodian/c7n/`.
-- Docs under `./cloud-custodian/docs/` are Sphinx RST — read them directly when researching features.
-- Do not modify files inside `./cloud-custodian/` unless explicitly asked; treat it as a read-only reference.
-- Research findings and notes should be written to files in the project root (outside the clone).
+- Edit `policy.yml.j2` to change policy behavior; never edit a rendered policy file directly.
+- Run `./deploy.sh --dryrun` and review `s3-summary.py` output before going live with `./deploy.sh --live`.
+- The `cloud-custodian/` clone is a read-only reference — do not modify files inside it.
+- Tests live in `tests/`; run with `uv run pytest tests/ -v`.
+- All changes must arrive via pull request; CI runs ruff, shellcheck/shfmt, yamllint, and pytest.
