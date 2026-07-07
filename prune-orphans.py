@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""
+Remove orphaned custodian Lambda functions and EventBridge rules.
+
+Renders policy.yml.j2 in both live and dry-run modes to determine the full
+expected set of Lambda function names, then removes any deployed custodian-*
+functions across all regions that are not in that set.
+
+Run this after removing a policy from policy.yml.j2 and redeploying.
+
+Usage:
+    uv run prune-orphans.py              # scan all regions and remove orphans
+    uv run prune-orphans.py --dry-run    # list orphans without removing them
+    uv run prune-orphans.py --region us-east-2
+"""
+
+import argparse
+import re
+import subprocess
+import sys
+
+import boto3
+
+
+def get_expected_names(account_id):
+    """Return the set of Lambda function names expected to exist."""
+    expected = set()
+    for extra in ([], ["--dryrun"]):
+        result = subprocess.run(
+            ["uv", "run", "render-policy.py", "--account-id", account_id] + extra,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        for m in re.finditer(r"^\s+-\s+name:\s+(\S+)", result.stdout, re.MULTILINE):
+            expected.add(f"custodian-{m.group(1)}")
+    return expected
+
+
+def list_deployed(region):
+    """Return sorted list of custodian-* Lambda function names in a region."""
+    lam = boto3.client("lambda", region_name=region)
+    paginator = lam.get_paginator("list_functions")
+    return sorted(
+        fn["FunctionName"]
+        for page in paginator.paginate()
+        for fn in page["Functions"]
+        if fn["FunctionName"].startswith("custodian-")
+    )
+
+
+def remove_function(region, fn_name):
+    """Remove a Lambda function and its EventBridge rule and targets."""
+    lam = boto3.client("lambda", region_name=region)
+    ev = boto3.client("events", region_name=region)
+    try:
+        targets = ev.list_targets_by_rule(Rule=fn_name)["Targets"]
+        if targets:
+            ev.remove_targets(Rule=fn_name, Ids=[t["Id"] for t in targets])
+        ev.delete_rule(Name=fn_name)
+    except ev.exceptions.ResourceNotFoundException:
+        pass  # rule already gone — proceed to Lambda deletion
+    lam.delete_function(FunctionName=fn_name)
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Remove orphaned custodian Lambda functions and EventBridge rules.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List orphans without removing them",
+    )
+    ap.add_argument("--region", help="Limit scan to a single AWS region")
+    ap.add_argument(
+        "--account-id",
+        metavar="ID",
+        help="AWS account ID (default: fetched from STS)",
+    )
+    args = ap.parse_args()
+
+    account_id = args.account_id or boto3.client("sts").get_caller_identity()["Account"]
+    expected = get_expected_names(account_id)
+
+    if args.region:
+        regions = [args.region]
+    else:
+        ec2 = boto3.client("ec2", region_name="us-east-2")
+        regions = sorted(r["RegionName"] for r in ec2.describe_regions()["Regions"])
+
+    print(f"Scanning {len(regions)} region(s) for orphaned custodian functions...")
+    orphans = []
+    for region in regions:
+        for fn in list_deployed(region):
+            if fn not in expected:
+                orphans.append((region, fn))
+
+    if not orphans:
+        print("No orphaned functions found.")
+        return
+
+    print(f"\n{len(orphans)} orphaned function(s) found:\n")
+    for region, fn in orphans:
+        print(f"  {region}  {fn}")
+
+    if args.dry_run:
+        print(f"\nRun without --dry-run to remove these {len(orphans)} function(s).")
+        return
+
+    print()
+    answer = input(f"Type 'yes' to remove these {len(orphans)} function(s): ")
+    if answer != "yes":
+        print("Aborted.")
+        sys.exit(0)
+
+    print()
+    for region, fn in orphans:
+        remove_function(region, fn)
+        print(f"  ✓ removed  {region}  {fn}")
+
+    print(f"\nDone. {len(orphans)} function(s) removed.")
+
+
+if __name__ == "__main__":
+    main()
