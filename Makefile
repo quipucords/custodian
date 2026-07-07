@@ -17,6 +17,8 @@ lint-shell:
 	shfmt -d -i 4 -ci $(SHELL_SCRIPTS)
 
 lint-yaml:
+	uv run render-policy.py | uv run yamllint -c .yamllint.yml -
+	uv run render-policy.py --dryrun | uv run yamllint -c .yamllint.yml -
 	uv run yamllint -c .yamllint.yml .github/workflows/
 
 test:

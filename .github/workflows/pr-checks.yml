@@ -43,9 +43,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pip install yamllint
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --group dev
+      - name: Lint rendered policy YAML
+        run: |
+          uv run render-policy.py --account-id 123456789012 | uv run yamllint -c .yamllint.yml -
+          uv run render-policy.py --account-id 123456789012 --dryrun | uv run yamllint -c .yamllint.yml -
       - name: Lint workflow YAML files
-        run: yamllint -c .yamllint.yml .github/workflows/
+        run: uv run yamllint -c .yamllint.yml .github/workflows/
 
   test:
     name: Tests — pytest
