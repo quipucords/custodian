@@ -18,7 +18,7 @@ echo "=================================================="
 echo " AWS Account ID : $ACCOUNT_ID"
 echo ""
 echo " Scanning all regions for custodian-*-dryrun functions and rules..."
-echo " (This takes about a minute.)"
+echo " (This runs sequentially across all regions — expect 10–15 minutes.)"
 echo ""
 
 REGIONS=$(aws ec2 describe-regions --query 'Regions[].RegionName' --output text | tr '\t' '\n' | sort)
