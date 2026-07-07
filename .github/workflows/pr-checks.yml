@@ -1,0 +1,61 @@
+---
+name: PR Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint-python:
+    name: Python — ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --group dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  lint-shell:
+    name: Shell — shellcheck + shfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          severity: warning
+
+      - name: Install shfmt
+        run: |
+          curl -Lo /tmp/shfmt \
+            "https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64"
+          chmod +x /tmp/shfmt
+          sudo mv /tmp/shfmt /usr/local/bin/shfmt
+
+      - name: shfmt
+        run: shfmt -d -i 4 -ci setup.sh deploy.sh cleanup-dryrun.sh teardown.sh
+
+  lint-yaml:
+    name: YAML — yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install yamllint
+      - name: Lint workflow YAML files
+        run: yamllint -c .yamllint.yml .github/workflows/
+
+  test:
+    name: Tests — pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --group dev
+      - run: uv run pytest tests/ -v

@@ -15,7 +15,7 @@ DRYRUN=""
 for arg in "$@"; do
     case $arg in
         --dryrun) DRYRUN=true ;;
-        --live)   DRYRUN=false ;;
+        --live) DRYRUN=false ;;
         *)
             echo "Unknown argument: $arg"
             echo "Usage: $0 --dryrun | --live"
@@ -104,7 +104,7 @@ echo "    Logs      : ${LOG_DIR}/"
 echo ""
 
 for region in $REGIONS; do
-    while [ "$(ls "$LOCKDIR" | wc -l | tr -d ' ')" -ge "$MAX_PARALLEL" ]; do
+    while [ "$(find "$LOCKDIR" -maxdepth 1 -mindepth 1 | wc -l | tr -d ' ')" -ge "$MAX_PARALLEL" ]; do
         sleep 2
     done
 
@@ -115,7 +115,7 @@ for region in $REGIONS; do
             -r "$region" \
             --output-dir "s3://${BUCKET}/${OUTPUT_PREFIX}/${region}" \
             "$RENDERED_POLICY" \
-            > "${LOG_DIR}/${region}.log" 2>&1
+            >"${LOG_DIR}/${region}.log" 2>&1
         status=$?
         rm -f "${LOCKDIR}/${region}"
         if [ $status -eq 0 ]; then

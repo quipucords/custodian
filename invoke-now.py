@@ -21,10 +21,12 @@ import boto3
 def main():
     ap = argparse.ArgumentParser(description="Trigger custodian Lambdas immediately.")
     ap.add_argument("region", help="AWS region (e.g. us-east-1)")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="List matching functions without invoking them")
-    ap.add_argument("--prefix", default="custodian-",
-                    help="Lambda function name prefix (default: custodian-)")
+    ap.add_argument(
+        "--dry-run", action="store_true", help="List matching functions without invoking them"
+    )
+    ap.add_argument(
+        "--prefix", default="custodian-", help="Lambda function name prefix (default: custodian-)"
+    )
     args = ap.parse_args()
 
     lam = boto3.client("lambda", region_name=args.region)
@@ -52,7 +54,7 @@ def main():
         else:
             lam.invoke(
                 FunctionName=fn,
-                InvocationType="Event",   # async: fire-and-forget, all run in parallel
+                InvocationType="Event",  # async: fire-and-forget, all run in parallel
                 Payload=json.dumps({}).encode(),
             )
             print(f"  ▶ {fn}")

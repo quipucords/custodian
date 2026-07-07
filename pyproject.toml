@@ -7,3 +7,21 @@ dependencies = [
     "c7n==0.9.51",
     "jinja2>=3.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pyyaml>=6.0.3",
+    "ruff>=0.15.20",
+    "yamllint>=1.38.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+exclude = ["cloud-custodian/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]

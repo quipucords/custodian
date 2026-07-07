@@ -20,7 +20,6 @@ SSM_BUCKET_PARAM="/custodian/output-bucket-name"
 
 # Derive account ID from current credentials (fails loudly if not authenticated)
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
 
 # Bucket name: opaque random identifier stored in SSM Parameter Store.
 # Using an account-ID-based name would leak the account ID to anyone who
@@ -36,10 +35,10 @@ else
     UUID=$(python3 -c "import uuid; print(str(uuid.uuid4()))")
     BUCKET_NAME="redhat-discovery-custodian-${UUID}"
     aws ssm put-parameter \
-        --name  "$SSM_BUCKET_PARAM" \
+        --name "$SSM_BUCKET_PARAM" \
         --region "$PRIMARY_REGION" \
         --value "$BUCKET_NAME" \
-        --type  "String" \
+        --type "String" \
         --description "Cloud Custodian output S3 bucket name — do not change"
 fi
 
@@ -52,7 +51,6 @@ echo " S3 Bucket      : $BUCKET_NAME"
 echo " Primary Region : $PRIMARY_REGION"
 echo "=================================================="
 echo ""
-
 
 # ── IAM Role ────────────────────────────────────────────────────────────────────
 echo ">>> IAM Role: $ROLE_NAME"
@@ -69,12 +67,11 @@ if ! aws iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
                 "Action": "sts:AssumeRole"
             }]
         }' \
-        --output text --query 'Role.RoleName' > /dev/null
+        --output text --query 'Role.RoleName' >/dev/null
     echo "    Created."
 else
     echo "    Already exists, skipping creation."
 fi
-
 
 # ── IAM Inline Policy ───────────────────────────────────────────────────────────
 # put-role-policy is always idempotent: creates or replaces.
@@ -191,7 +188,6 @@ aws iam put-role-policy \
     }"
 echo "    Applied."
 
-
 # ── S3 Bucket ───────────────────────────────────────────────────────────────────
 echo ">>> S3 Bucket: $BUCKET_NAME"
 
@@ -200,7 +196,7 @@ if ! aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
         --bucket "$BUCKET_NAME" \
         --region "$PRIMARY_REGION" \
         --create-bucket-configuration LocationConstraint="$PRIMARY_REGION" \
-        --output text --query 'Location' > /dev/null
+        --output text --query 'Location' >/dev/null
     echo "    Created."
 else
     echo "    Already exists, skipping creation."
@@ -212,13 +208,13 @@ echo "    Blocking all public access..."
 aws s3api put-public-access-block \
     --bucket "$BUCKET_NAME" \
     --public-access-block-configuration \
-        "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+    "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
 
 echo "    Enabling AES-256 server-side encryption..."
 aws s3api put-bucket-encryption \
     --bucket "$BUCKET_NAME" \
     --server-side-encryption-configuration \
-        '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"},"BucketKeyEnabled":true}]}'
+    '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"},"BucketKeyEnabled":true}]}'
 
 echo "    Enforcing HTTPS-only access..."
 aws s3api put-bucket-policy \
@@ -249,7 +245,6 @@ aws s3api put-bucket-lifecycle-configuration \
             \"Expiration\": {\"Days\": ${LOG_RETENTION_DAYS}}
         }]
     }"
-
 
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ""
