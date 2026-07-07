@@ -80,10 +80,9 @@ def main():
     if args.output:
         with open(args.output, "w") as fh:
             fh.write(rendered)
-            fh.write("\n")
         print(f"Written to {args.output}", file=sys.stderr)
     else:
-        print(rendered)
+        sys.stdout.write(rendered)
 
 
 if __name__ == "__main__":
