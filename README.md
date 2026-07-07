@@ -27,6 +27,8 @@ For our use case, c7n runs as a set of **AWS Lambda functions** triggered by **E
 | `s3-summary.py` | Reads S3 output from Lambda runs and prints a compact per-resource summary. |
 | `cleanup-dryrun.sh` | Removes dry-run Lambda functions and EventBridge rules after going live. |
 | `teardown.sh` | Removes **all** resources created by `setup.sh` and `deploy.sh`. Use for test account cleanup. |
+| `tests/` | pytest suite covering policy template rendering and s3-summary helpers. |
+| `pyproject.toml` / `uv.lock` | Python project metadata and pinned dependency lockfile. |
 
 ---
 
@@ -474,7 +476,7 @@ No configuration change is needed. `deploy.sh` queries all available regions at 
 
 ### Removing a policy
 
-Delete the policy block from `policy.yml.j2` and redeploy. The Lambda function and EventBridge rule for the removed policy will be left behind but inactive — they will not run because their EventBridge rules will no longer be updated. To clean them up explicitly, run `teardown.sh` and `setup.sh` again, or remove them manually:
+Delete the policy block from `policy.yml.j2` and redeploy. The Lambda function and EventBridge rule for the removed policy are **not deleted by redeployment** — they remain in place and will continue to fire on schedule until explicitly removed. Remove them manually:
 
 ```bash
 aws lambda delete-function --function-name custodian-<policy-name> --region us-east-2
