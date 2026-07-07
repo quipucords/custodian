@@ -402,7 +402,7 @@ aws logs filter-log-events \
 
 ### Source of truth: `policy.yml.j2`
 
-`policy.yml.j2` is the authoritative definition of all cleanup policies. It should be kept in version control. `deploy.sh` renders it at deploy time — no separate policy files need to be maintained.
+`policy.yml.j2` is the authoritative definition of all cleanup policies. `deploy.sh` renders it at deploy time — no separate policy files need to be maintained.
 
 To inspect what a deployment will use before running it:
 
