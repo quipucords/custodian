@@ -1,5 +1,14 @@
 SHELL_SCRIPTS = setup.sh deploy.sh cleanup-dryrun.sh teardown.sh
 
+# Poison AWS credentials for every recipe so no target can accidentally reach
+# real AWS infrastructure. Any boto3 or aws-cli call will fail fast rather
+# than silently hitting the real account. /dev/null blocks file-based auth.
+export AWS_ACCESS_KEY_ID     := AKIAIOSFODNN7EXAMPLE
+export AWS_SECRET_ACCESS_KEY := wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+export AWS_SESSION_TOKEN     :=
+export AWS_SHARED_CREDENTIALS_FILE := /dev/null
+export AWS_CONFIG_FILE       := /dev/null
+
 .PHONY: check lint lint-python lint-shell lint-yaml test fmt
 
 check: lint test
@@ -17,8 +26,8 @@ lint-shell:
 	shfmt -d -i 4 -ci $(SHELL_SCRIPTS)
 
 lint-yaml:
-	uv run render-policy.py | uv run yamllint -c .yamllint.yml -
-	uv run render-policy.py --dryrun | uv run yamllint -c .yamllint.yml -
+	uv run render-policy.py --account-id 123456789012 | uv run yamllint -c .yamllint.yml -
+	uv run render-policy.py --account-id 123456789012 --dryrun | uv run yamllint -c .yamllint.yml -
 	uv run yamllint -c .yamllint.yml .github/workflows/
 
 test:
