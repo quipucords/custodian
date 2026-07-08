@@ -11,6 +11,7 @@ Run this after removing a policy from policy.yml.j2 and redeploying.
 Usage:
     uv run prune-orphans.py              # scan all regions and remove orphans
     uv run prune-orphans.py --dry-run    # list orphans without removing them
+    uv run prune-orphans.py --yes        # skip confirmation prompt (for CI)
     uv run prune-orphans.py --region us-east-2
 """
 
@@ -78,6 +79,11 @@ def main():
         action="store_true",
         help="List orphans without removing them",
     )
+    ap.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the interactive confirmation prompt (for CI/automation)",
+    )
     ap.add_argument("--region", help="Limit scan to a single AWS region")
     ap.add_argument(
         "--account-id",
@@ -114,11 +120,12 @@ def main():
         print(f"\nRun without --dry-run to remove these {len(orphans)} function(s).")
         return
 
-    print()
-    answer = input(f"Type 'yes' to remove these {len(orphans)} function(s): ")
-    if answer != "yes":
-        print("Aborted.")
-        sys.exit(0)
+    if not args.yes:
+        print()
+        answer = input(f"Type 'yes' to remove these {len(orphans)} function(s): ")
+        if answer != "yes":
+            print("Aborted.")
+            sys.exit(0)
 
     print()
     removed = 0
