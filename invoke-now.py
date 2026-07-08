@@ -6,13 +6,13 @@ Useful for getting immediate S3 output without waiting for the EventBridge
 schedule. Functions are invoked asynchronously so they all run in parallel.
 
 By default the custodian- prefix matches BOTH live and dry-run functions.
-Use --live-only or --dryrun-only to restrict which set is triggered.
+Use --live-only or --dry-run-only to restrict which set is triggered.
 
 Usage:
-    uv run invoke-now.py us-east-1
-    uv run invoke-now.py us-east-1 --dry-run        # list without invoking
-    uv run invoke-now.py us-east-1 --live-only      # skip -dryrun functions
-    uv run invoke-now.py us-east-1 --dry-run-only    # only -dryrun functions
+    uv run invoke-now.py --region us-east-1
+    uv run invoke-now.py --region us-east-1 --dry-run       # list without invoking
+    uv run invoke-now.py --region us-east-1 --live-only     # skip -dryrun functions
+    uv run invoke-now.py --region us-east-1 --dry-run-only  # only -dryrun functions
 """
 
 import argparse
@@ -25,7 +25,7 @@ from botocore.exceptions import ClientError
 
 def main():
     ap = argparse.ArgumentParser(description="Trigger custodian Lambdas immediately.")
-    ap.add_argument("region", help="AWS region (e.g. us-east-1)")
+    ap.add_argument("--region", required=True, help="AWS region (e.g. us-east-1)")
     ap.add_argument(
         "--dry-run", action="store_true", help="List matching functions without invoking them"
     )
