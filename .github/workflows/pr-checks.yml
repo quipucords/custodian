@@ -3,6 +3,8 @@ name: PR Checks
 
 on:
   pull_request:
+  push:
+    branches: [main]
 
 # Poison AWS credentials workflow-wide so no job can accidentally reach real
 # AWS infrastructure. Any boto3 or aws-cli call will fail fast rather than
