@@ -48,7 +48,7 @@ def tag(r, k="Name"):
 
 
 def extract(policy, r):
-    if "ec2" in policy or "pet" in policy:
+    if "ec2" in policy:
         return r.get("InstanceId", "?"), tag(r)
     elif "volume" in policy:
         return r.get("VolumeId", "?"), tag(r)
@@ -193,7 +193,13 @@ def main():
                 print(f"{region:<18} {policy:<42} {rid:<25} {name}{run_tag}")
                 total += 1
 
-    print(f"\n{total} resource(s) identified across all matched policies.")
+    filters = []
+    if args.region:
+        filters.append(f"region={args.region}")
+    if args.policy:
+        filters.append(f"policy~={args.policy!r}")
+    filter_note = f" (filters: {', '.join(filters)})" if filters else ""
+    print(f"\n{total} resource(s) identified{filter_note}.")
 
 
 if __name__ == "__main__":
