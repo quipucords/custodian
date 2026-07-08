@@ -6,7 +6,7 @@
 #
 # Usage:
 #   ./deploy.sh            — live mode: resources WILL be terminated/deleted
-#   ./deploy.sh --dryrun   — observation mode: Lambdas run but take no action
+#   ./deploy.sh --dry-run  — observation mode: Lambdas run but take no action
 
 set -euo pipefail
 
@@ -14,11 +14,11 @@ set -euo pipefail
 DRYRUN=""
 for arg in "$@"; do
     case $arg in
-        --dryrun) DRYRUN=true ;;
+        --dry-run) DRYRUN=true ;;
         --live) DRYRUN=false ;;
         *)
             echo "Unknown argument: $arg"
-            echo "Usage: $0 --dryrun | --live"
+            echo "Usage: $0 --dry-run | --live"
             exit 1
             ;;
     esac
@@ -27,7 +27,7 @@ done
 if [ -z "$DRYRUN" ]; then
     echo "Error: you must specify a mode."
     echo ""
-    echo "  ./deploy.sh --dryrun   observation only — no resources will be modified"
+    echo "  ./deploy.sh --dry-run  observation only — no resources will be modified"
     echo "  ./deploy.sh --live     destructive — resources WILL be terminated/deleted"
     echo ""
     exit 1
@@ -37,7 +37,7 @@ fi
 if [ "$DRYRUN" = true ]; then
     OUTPUT_PREFIX="dryrun-output"
     MODE_LABEL="Dry-Run — observation only, no resources will be modified"
-    RENDER_FLAG="--dryrun"
+    RENDER_FLAG="--dry-run"
 else
     OUTPUT_PREFIX="output"
     MODE_LABEL="Live — resources matching policies WILL be terminated or deleted"

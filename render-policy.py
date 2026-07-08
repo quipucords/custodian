@@ -10,13 +10,13 @@ Usage:
     uv run render-policy.py
 
     # Render dry-run policy to stdout
-    uv run render-policy.py --dryrun
+    uv run render-policy.py --dry-run
 
     # Write to a file
-    uv run render-policy.py --dryrun -o /tmp/policy-dryrun.yml
+    uv run render-policy.py --dry-run -o /tmp/policy-dryrun.yml
 
     # Local dry-run test using the rendered output
-    uv run render-policy.py --dryrun | \
+    uv run render-policy.py --dry-run | \
         uv run custodian run --dryrun -r us-east-1 --output-dir ./local-dryrun /dev/stdin
 """
 
@@ -43,7 +43,7 @@ def main():
         epilog=__doc__,
     )
     ap.add_argument(
-        "--dryrun",
+        "--dry-run",
         action="store_true",
         help="Render in dry-run mode (no destructive actions, -dryrun name suffix)",
     )
@@ -85,7 +85,7 @@ def main():
         sys.exit(f"Template not found: {os.path.join(template_dir, 'policy.yml.j2')}")
 
     try:
-        rendered = template.render(account_id=account_id, dryrun=args.dryrun)
+        rendered = template.render(account_id=account_id, dryrun=args.dry_run)
     except jinja2.UndefinedError as e:
         sys.exit(f"Template variable error in policy.yml.j2: {e}")
 
