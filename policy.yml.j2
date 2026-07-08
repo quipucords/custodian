@@ -208,6 +208,15 @@ policies:
 
   # Releases unassociated Elastic IPs that are not exempt.
   # Unassociated EIPs cost ~$3.65/month each.
+  #
+  # Note: Unlike ENIs and NAT gateways, the AWS EIP API (DescribeAddresses)
+  # exposes no creation or disassociation timestamp, so no minimum-age filter
+  # is possible here. There is a narrow theoretical race: an EIP disassociated
+  # to move between instances could be released if the daily Lambda fires during
+  # that brief window (~1/1440 probability). The risk is accepted given the daily
+  # schedule and the complexity of the alternative (a mark-for-op two-policy
+  # approach). Tag any EIP in active transition with custodian:exempt=true to
+  # guarantee it is skipped.
   - name: release-unassociated-eips{{ suffix }}
     resource: elastic-ip
     mode:
