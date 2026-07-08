@@ -60,7 +60,16 @@ def main():
     )
     args = ap.parse_args()
 
-    account_id = args.account_id or boto3.client("sts").get_caller_identity()["Account"]
+    if args.account_id:
+        account_id = args.account_id
+    else:
+        try:
+            account_id = boto3.client("sts").get_caller_identity()["Account"]
+        except Exception as e:
+            sys.exit(
+                f"Could not fetch AWS account ID from STS: {e}\n"
+                "Pass --account-id explicitly to skip this call."
+            )
 
     template_dir = os.path.dirname(os.path.abspath(__file__))
     env = jinja2.Environment(
@@ -75,7 +84,10 @@ def main():
     except jinja2.TemplateNotFound:
         sys.exit(f"Template not found: {os.path.join(template_dir, 'policy.yml.j2')}")
 
-    rendered = template.render(account_id=account_id, dryrun=args.dryrun)
+    try:
+        rendered = template.render(account_id=account_id, dryrun=args.dryrun)
+    except jinja2.UndefinedError as e:
+        sys.exit(f"Template variable error in policy.yml.j2: {e}")
 
     if args.output:
         with open(args.output, "w") as fh:
