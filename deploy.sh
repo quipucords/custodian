@@ -127,15 +127,30 @@ for region in $REGIONS; do
             echo "    ✓ ${region}"
         else
             echo "    ✗ ${region} FAILED — see ${LOG_DIR}/${region}.log"
+            touch "${LOCKDIR}/failed-${region}"
         fi
     ) &
 done
 
 wait
 
+# Collect failures written by subshells before LOCKDIR is cleaned up on exit.
+FAILED_REGIONS=()
+for f in "${LOCKDIR}"/failed-*; do
+    [ -f "$f" ] || continue
+    FAILED_REGIONS+=("${f#"${LOCKDIR}"/failed-}")
+done
+
 echo ""
 echo "=================================================="
-echo " Deployment complete."
+if [ "${#FAILED_REGIONS[@]}" -gt 0 ]; then
+    echo " Deployment finished with ${#FAILED_REGIONS[@]} region failure(s):"
+    for r in "${FAILED_REGIONS[@]}"; do
+        echo "   ✗ ${r} — see ${LOG_DIR}/${r}.log"
+    done
+else
+    echo " Deployment complete."
+fi
 echo "=================================================="
 echo ""
 
@@ -166,3 +181,7 @@ else
     echo "   uv run s3-summary.py --prefix output --region us-east-1"
 fi
 echo ""
+
+if [ "${#FAILED_REGIONS[@]}" -gt 0 ]; then
+    exit 1
+fi
