@@ -132,7 +132,8 @@ aws iam put-role-policy \
                     \"ec2:DescribeAddresses\",
                     \"ec2:DescribeNatGateways\",
                     \"ec2:DescribeLaunchTemplates\",
-                    \"ec2:DescribeLaunchTemplateVersions\"
+                    \"ec2:DescribeLaunchTemplateVersions\",
+                    \"ec2:DescribeSecurityGroupReferences\"
                 ],
                 \"Resource\": \"*\"
             },
@@ -179,7 +180,11 @@ aws iam put-role-policy \
                     \"ecs:DescribeClusters\",
                     \"batch:DescribeComputeEnvironments\",
                     \"codebuild:ListProjects\",
-                    \"codebuild:BatchGetProjects\"
+                    \"codebuild:BatchGetProjects\",
+                    \"tag:GetResources\",
+                    \"events:ListEventBuses\",
+                    \"events:ListRules\",
+                    \"events:ListTargetsByRule\"
                 ],
                 \"Resource\": \"*\"
             },
