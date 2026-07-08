@@ -38,6 +38,14 @@ PRIMARY_REGION="us-east-2"
 S3_EXPIRATION_DAYS=90
 SSM_BUCKET_PARAM="/custodian/output-bucket-name"
 
+if [ "$PRIMARY_REGION" = "us-east-1" ]; then
+    echo "ERROR: PRIMARY_REGION is set to us-east-1." >&2
+    echo "       S3 create-bucket rejects LocationConstraint for us-east-1." >&2
+    echo "       Change PRIMARY_REGION to another region or remove the" >&2
+    echo "       LocationConstraint from this script if us-east-1 is required." >&2
+    exit 1
+fi
+
 # Derive account ID from current credentials (fails loudly if not authenticated)
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
@@ -216,14 +224,6 @@ echo "    Applied."
 
 # ── S3 Bucket ───────────────────────────────────────────────────────────────────
 echo ">>> S3 Bucket: $BUCKET_NAME"
-
-if [ "$PRIMARY_REGION" = "us-east-1" ]; then
-    echo "ERROR: PRIMARY_REGION is set to us-east-1." >&2
-    echo "       S3 create-bucket rejects LocationConstraint for us-east-1." >&2
-    echo "       Change PRIMARY_REGION to another region or remove the" >&2
-    echo "       LocationConstraint from this script if us-east-1 is required." >&2
-    exit 1
-fi
 
 if ! aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
     aws s3api create-bucket \
