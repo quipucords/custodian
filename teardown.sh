@@ -65,6 +65,21 @@ echo ""
 
 REGIONS=$(aws ec2 describe-regions --query 'Regions[].RegionName' --output text)
 FOUND_SOMETHING=false
+DELETE_FAILED=false
+
+# Run an AWS delete command; treat "resource not found" as success (idempotent)
+# but surface any other error and record the failure.
+aws_delete() {
+    local err
+    if ! err=$(aws "$@" 2>&1 >/dev/null); then
+        if echo "$err" | grep -qiE \
+            'ResourceNotFoundException|NoSuchEntity|does not exist|not found'; then
+            return 0 # already gone — expected for idempotent teardown
+        fi
+        echo "        ERROR: aws $* → ${err}" >&2
+        DELETE_FAILED=true
+    fi
+}
 
 for region in $REGIONS; do
 
@@ -104,35 +119,31 @@ for region in $REGIONS; do
 
         if [ -n "$target_ids" ]; then
             # shellcheck disable=SC2086
-            aws events remove-targets \
+            aws_delete events remove-targets \
                 --rule "$rule" \
                 --region "$region" \
-                --ids $target_ids \
-                >/dev/null 2>&1 || true
+                --ids $target_ids
         fi
 
-        aws events delete-rule \
+        aws_delete events delete-rule \
             --name "$rule" \
-            --region "$region" \
-            2>/dev/null || true
+            --region "$region"
         echo "        Deleted EventBridge rule:  $rule"
     done
 
     # Lambda functions
     for fn in $fns; do
-        aws lambda delete-function \
+        aws_delete lambda delete-function \
             --function-name "$fn" \
-            --region "$region" \
-            2>/dev/null || true
+            --region "$region"
         echo "        Deleted Lambda function:   $fn"
     done
 
     # CloudWatch log groups
     for lg in $log_groups; do
-        aws logs delete-log-group \
+        aws_delete logs delete-log-group \
             --log-group-name "$lg" \
-            --region "$region" \
-            2>/dev/null || true
+            --region "$region"
         echo "        Deleted log group:         $lg"
     done
 
@@ -140,6 +151,13 @@ done
 
 if [ "$FOUND_SOMETHING" = false ]; then
     echo "    Nothing found — already removed or never deployed."
+fi
+
+if [ "$DELETE_FAILED" = true ]; then
+    echo "" >&2
+    echo "ERROR: One or more deletions failed — see errors above." >&2
+    echo "       Resources that failed to delete may still be active." >&2
+    exit 1
 fi
 echo ""
 
