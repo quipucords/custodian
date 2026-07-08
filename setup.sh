@@ -191,6 +191,14 @@ echo "    Applied."
 # ── S3 Bucket ───────────────────────────────────────────────────────────────────
 echo ">>> S3 Bucket: $BUCKET_NAME"
 
+if [ "$PRIMARY_REGION" = "us-east-1" ]; then
+    echo "ERROR: PRIMARY_REGION is set to us-east-1." >&2
+    echo "       S3 create-bucket rejects LocationConstraint for us-east-1." >&2
+    echo "       Change PRIMARY_REGION to another region or remove the" >&2
+    echo "       LocationConstraint from this script if us-east-1 is required." >&2
+    exit 1
+fi
+
 if ! aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
     aws s3api create-bucket \
         --bucket "$BUCKET_NAME" \
@@ -262,8 +270,8 @@ echo " 2. Deploy in dry-run mode to observe what would be cleaned up:"
 echo "    ./deploy.sh --dryrun"
 echo ""
 echo " 3. Trigger an immediate run in your primary region and review findings:"
-echo "    python3 invoke-now.py us-east-2"
-echo "    python3 s3-summary.py"
+echo "    uv run invoke-now.py us-east-2"
+echo "    uv run s3-summary.py"
 echo ""
 echo " 4. When satisfied with findings, deploy live:"
 echo "    ./deploy.sh --live"
