@@ -12,6 +12,26 @@
 
 set -euo pipefail
 
+for arg in "$@"; do
+    case $arg in
+        --help)
+            echo "Usage: $0"
+            echo ""
+            echo "One-time AWS infrastructure setup for Cloud Custodian."
+            echo "Idempotent — safe to run multiple times."
+            echo ""
+            echo "Creates (or verifies) the IAM role, S3 output bucket, and"
+            echo "SSM parameter needed before running ./deploy.sh."
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $arg"
+            echo "Usage: $0"
+            exit 1
+            ;;
+    esac
+done
+
 # ── Configuration ───────────────────────────────────────────────────────────────
 ROLE_NAME="custodian-cleanup-role"
 PRIMARY_REGION="us-east-2"
@@ -29,10 +49,10 @@ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 # Capture stdout+stderr together so we can distinguish ParameterNotFound
 # (expected on first run) from real failures (bad credentials, network, etc.).
 if SSM_RESULT=$(aws ssm get-parameter \
-        --name "$SSM_BUCKET_PARAM" \
-        --region "$PRIMARY_REGION" \
-        --query 'Parameter.Value' \
-        --output text 2>&1); then
+    --name "$SSM_BUCKET_PARAM" \
+    --region "$PRIMARY_REGION" \
+    --query 'Parameter.Value' \
+    --output text 2>&1); then
     BUCKET_NAME="$SSM_RESULT"
 elif echo "$SSM_RESULT" | grep -q 'ParameterNotFound'; then
     UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')

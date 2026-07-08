@@ -23,6 +23,16 @@ YES=""
 for arg in "$@"; do
     case $arg in
         --yes) YES=true ;;
+        --help)
+            echo "Usage: $0 [--yes]"
+            echo ""
+            echo "Permanently removes all Cloud Custodian resources from every AWS region:"
+            echo "  Lambda functions, EventBridge rules, CloudWatch log groups,"
+            echo "  the S3 output bucket, the IAM role, and the SSM parameter."
+            echo ""
+            echo "  --yes   Skip confirmation prompt (for CI)"
+            exit 0
+            ;;
         *)
             echo "Unknown argument: $arg"
             echo "Usage: $0 [--yes]"
@@ -80,20 +90,27 @@ echo ">>> Scanning all regions for custodian resources..."
 echo "    (Checking every available region — this takes about a minute.)"
 echo ""
 
-REGIONS=$(aws ec2 describe-regions --query 'Regions[].RegionName' --output text)
+REGIONS=$(aws ec2 describe-regions --region "$PRIMARY_REGION" --query 'Regions[].RegionName' --output text | tr '\t' '\n' | sort)
 FOUND_SOMETHING=false
 DELETE_FAILED=false
 
 # Run an AWS delete command; treat "resource not found" as success (idempotent)
 # but surface any other error and record the failure.
+# Sets aws_delete_status="ok" | "noop" | "error" so callers can print "Deleted"
+# only when the resource actually existed (avoids false messages on re-runs).
+# Note: this function is duplicated verbatim in cleanup-dryrun.sh.
+aws_delete_status=ok
 aws_delete() {
     local err
+    aws_delete_status=ok
     if ! err=$(aws "$@" 2>&1 >/dev/null); then
         if echo "$err" | grep -qiE \
             'ResourceNotFoundException|NoSuchEntity|does not exist|not found'; then
+            aws_delete_status=noop
             return 0 # already gone — expected for idempotent teardown
         fi
         echo "        ERROR: aws $* → ${err}" >&2
+        aws_delete_status=error
         DELETE_FAILED=true
     fi
 }
@@ -145,7 +162,7 @@ for region in $REGIONS; do
         aws_delete events delete-rule \
             --name "$rule" \
             --region "$region"
-        echo "        Deleted EventBridge rule:  $rule"
+        [ "$aws_delete_status" = ok ] && echo "        Deleted EventBridge rule:  $rule"
     done
 
     # Lambda functions
@@ -153,7 +170,7 @@ for region in $REGIONS; do
         aws_delete lambda delete-function \
             --function-name "$fn" \
             --region "$region"
-        echo "        Deleted Lambda function:   $fn"
+        [ "$aws_delete_status" = ok ] && echo "        Deleted Lambda function:   $fn"
     done
 
     # CloudWatch log groups
@@ -161,7 +178,7 @@ for region in $REGIONS; do
         aws_delete logs delete-log-group \
             --log-group-name "$lg" \
             --region "$region"
-        echo "        Deleted log group:         $lg"
+        [ "$aws_delete_status" = ok ] && echo "        Deleted log group:         $lg"
     done
 
 done
