@@ -5,9 +5,14 @@ Manually trigger all custodian Lambda functions in a region.
 Useful for getting immediate S3 output without waiting for the EventBridge
 schedule. Functions are invoked asynchronously so they all run in parallel.
 
+By default the custodian- prefix matches BOTH live and dry-run functions.
+Use --live-only or --dryrun-only to restrict which set is triggered.
+
 Usage:
     uv run invoke-now.py us-east-1
-    uv run invoke-now.py us-east-1 --dry-run    # just lists, does not invoke
+    uv run invoke-now.py us-east-1 --dry-run        # list without invoking
+    uv run invoke-now.py us-east-1 --live-only      # skip -dryrun functions
+    uv run invoke-now.py us-east-1 --dryrun-only    # only -dryrun functions
 """
 
 import argparse
@@ -27,6 +32,17 @@ def main():
     ap.add_argument(
         "--prefix", default="custodian-", help="Lambda function name prefix (default: custodian-)"
     )
+    mode_group = ap.add_mutually_exclusive_group()
+    mode_group.add_argument(
+        "--live-only",
+        action="store_true",
+        help="Skip dry-run functions (those ending in -dryrun)",
+    )
+    mode_group.add_argument(
+        "--dryrun-only",
+        action="store_true",
+        help="Only trigger dry-run functions (those ending in -dryrun)",
+    )
     args = ap.parse_args()
 
     lam = boto3.client("lambda", region_name=args.region)
@@ -36,8 +52,14 @@ def main():
     paginator = lam.get_paginator("list_functions")
     for page in paginator.paginate():
         for fn in page["Functions"]:
-            if fn["FunctionName"].startswith(args.prefix):
-                functions.append(fn["FunctionName"])
+            name = fn["FunctionName"]
+            if not name.startswith(args.prefix):
+                continue
+            if args.live_only and name.endswith("-dryrun"):
+                continue
+            if args.dryrun_only and not name.endswith("-dryrun"):
+                continue
+            functions.append(name)
     functions.sort()
 
     if not functions:
