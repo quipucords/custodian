@@ -179,3 +179,26 @@ class TestBothModes:
             and a.get("delete-snapshots") is True
             for a in actions
         )
+
+    def test_terminate_running_ec2_has_stop_only_filter(self, live):
+        # Instances tagged custodian:stop-only=true must never be terminated.
+        # Removing this filter from the template would silently break the guarantee.
+        _, _, policies = live
+        filters = policies["terminate-stale-running-ec2"]["filters"]
+        assert any(
+            isinstance(f, dict)
+            and f.get("key") == "tag:custodian:stop-only"
+            and f.get("op") == "ne"
+            for f in filters
+        ), "terminate-stale-running-ec2 is missing the stop-only-filter"
+
+    def test_terminate_stopped_ec2_has_stop_only_filter(self, live):
+        # Instances tagged custodian:stop-only=true must never be terminated.
+        _, _, policies = live
+        filters = policies["terminate-stale-stopped-ec2"]["filters"]
+        assert any(
+            isinstance(f, dict)
+            and f.get("key") == "tag:custodian:stop-only"
+            and f.get("op") == "ne"
+            for f in filters
+        ), "terminate-stale-stopped-ec2 is missing the stop-only-filter"
