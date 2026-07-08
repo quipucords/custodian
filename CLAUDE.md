@@ -11,7 +11,7 @@ This project deploys [cloud-custodian (c7n)](https://cloudcustodian.io/) to auto
 | `policy.yml.j2` | Jinja2 template defining all 12 cleanup policies — edit this to change policy behavior |
 | `render-policy.py` | Renders `policy.yml.j2` into a deployable YAML file |
 | `setup.sh` | One-time AWS infra setup: IAM role, S3 bucket, SSM parameter |
-| `deploy.sh` | Deploys Lambda functions to all regions (`--dryrun` or `--live`) |
+| `deploy.sh` | Deploys Lambda functions to all regions (`--dry-run` or `--live`) |
 | `invoke-now.py` | Manually triggers all custodian Lambdas in a region immediately |
 | `s3-summary.py` | Reads Lambda run output from S3 and prints a compact resource summary |
 | `prune-orphans.py` | Removes Lambda functions and EventBridge rules for policies deleted from `policy.yml.j2` |
@@ -36,7 +36,7 @@ This project deploys [cloud-custodian (c7n)](https://cloudcustodian.io/) to auto
 ## Working Conventions
 
 - Edit `policy.yml.j2` to change policy behavior; never edit a rendered policy file directly.
-- Run `./deploy.sh --dryrun` and review `s3-summary.py` output before going live with `./deploy.sh --live`.
+- Run `./deploy.sh --dry-run` and review `s3-summary.py` output before going live with `./deploy.sh --live`.
 - The `cloud-custodian/` clone is a read-only reference — do not modify files inside it.
 - Tests live in `tests/`; run with `uv run pytest tests/ -v`.
 - All changes must arrive via pull request; CI runs ruff, shellcheck/shfmt, yamllint, and pytest.

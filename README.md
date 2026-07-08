@@ -22,7 +22,7 @@ For our use case, c7n runs as a set of **AWS Lambda functions** triggered by **E
 | `policy.yml.j2` | **Source of truth** — Jinja2 template for all 12 cleanup policies. Edit this file to change policy configuration. |
 | `render-policy.py` | Renders `policy.yml.j2` into a deployable YAML file. Called automatically by `deploy.sh`; also useful standalone. |
 | `setup.sh` | One-time AWS infrastructure setup (IAM role, S3 bucket, SSM parameter). Idempotent. |
-| `deploy.sh` | Deploys Lambda functions to all AWS regions. Requires `--dryrun` or `--live` flag. |
+| `deploy.sh` | Deploys Lambda functions to all AWS regions. Requires `--dry-run` or `--live` flag. |
 | `invoke-now.py` | Manually triggers all custodian Lambda functions in a region immediately, without waiting for the schedule. |
 | `s3-summary.py` | Reads S3 output from Lambda runs and prints a compact per-resource summary. |
 | `prune-orphans.py` | Removes Lambda functions and EventBridge rules for policies deleted from `policy.yml.j2`. |
@@ -186,7 +186,7 @@ Before deploying any Lambda functions, you can render the policy template and ru
 
 ```bash
 # Render the template to a temporary file and run a local dryrun
-uv run render-policy.py --dryrun | \
+uv run render-policy.py --dry-run | \
     uv run custodian run --dryrun -r us-east-2 --output-dir ./local-dryrun /dev/stdin
 ```
 
@@ -216,7 +216,7 @@ Dry-run Lambda functions use a `-dryrun` name suffix (e.g., `custodian-terminate
 
 ```bash
 chmod +x deploy.sh
-./deploy.sh --dryrun
+./deploy.sh --dry-run
 ```
 
 This renders the policy template, then deploys Lambda functions to all AWS regions in parallel (8 at a time). Expect it to take 10–15 minutes.
@@ -412,7 +412,7 @@ To inspect what a deployment will use before running it:
 uv run render-policy.py
 
 # Preview the rendered dry-run policy
-uv run render-policy.py --dryrun
+uv run render-policy.py --dry-run
 ```
 
 ### List deployed Lambda functions
@@ -461,7 +461,7 @@ To change any policy (thresholds, schedules, filters, resource types):
 uv run render-policy.py | head -60
 
 # Redeploy dry-run to review the effect of changes
-./deploy.sh --dryrun
+./deploy.sh --dry-run
 uv run invoke-now.py us-east-2
 uv run s3-summary.py
 
