@@ -25,13 +25,16 @@ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 # Using an account-ID-based name would leak the account ID to anyone who
 # discovers the bucket name (DNS probing, leaked logs, etc.).
 # SSM is the source of truth; the same bucket is used on every run.
-if aws ssm get-parameter --name "$SSM_BUCKET_PARAM" --region "$PRIMARY_REGION" &>/dev/null; then
-    BUCKET_NAME=$(aws ssm get-parameter \
+#
+# Capture stdout+stderr together so we can distinguish ParameterNotFound
+# (expected on first run) from real failures (bad credentials, network, etc.).
+if SSM_RESULT=$(aws ssm get-parameter \
         --name "$SSM_BUCKET_PARAM" \
         --region "$PRIMARY_REGION" \
         --query 'Parameter.Value' \
-        --output text)
-else
+        --output text 2>&1); then
+    BUCKET_NAME="$SSM_RESULT"
+elif echo "$SSM_RESULT" | grep -q 'ParameterNotFound'; then
     UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
     BUCKET_NAME="redhat-discovery-custodian-${UUID}"
     aws ssm put-parameter \
@@ -40,6 +43,9 @@ else
         --value "$BUCKET_NAME" \
         --type "String" \
         --description "Cloud Custodian output S3 bucket name — do not change"
+else
+    echo "ERROR: Could not read SSM parameter ${SSM_BUCKET_PARAM}: ${SSM_RESULT}" >&2
+    exit 1
 fi
 
 echo "=================================================="
