@@ -69,7 +69,6 @@ for region in $REGIONS; do
 
     # shellcheck disable=SC2016  # backticks are JMESPath syntax, not shell substitution
     fns=$(aws lambda list-functions \
-        --no-paginate \
         --region "$region" \
         --query 'Functions[?starts_with(FunctionName, `custodian-`)].FunctionName' \
         --output text 2>/dev/null |
@@ -77,7 +76,6 @@ for region in $REGIONS; do
         grep -- '-dryrun$' || true)
 
     rules=$(aws events list-rules \
-        --no-paginate \
         --name-prefix "custodian-" \
         --region "$region" \
         --query 'Rules[].Name' \
