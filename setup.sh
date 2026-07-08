@@ -130,7 +130,9 @@ aws iam put-role-policy \
                     \"ec2:DescribeNetworkInterfaces\",
                     \"ec2:DescribeKeyPairs\",
                     \"ec2:DescribeAddresses\",
-                    \"ec2:DescribeNatGateways\"
+                    \"ec2:DescribeNatGateways\",
+                    \"ec2:DescribeLaunchTemplates\",
+                    \"ec2:DescribeLaunchTemplateVersions\"
                 ],
                 \"Resource\": \"*\"
             },
@@ -156,6 +158,7 @@ aws iam put-role-policy \
                 \"Sid\": \"AutoScalingRead\",
                 \"Effect\": \"Allow\",
                 \"Action\": [
+                    \"autoscaling:DescribeAutoScalingGroups\",
                     \"autoscaling:DescribeLaunchConfigurations\"
                 ],
                 \"Resource\": \"*\"
