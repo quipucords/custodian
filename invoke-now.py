@@ -66,7 +66,7 @@ def main():
 
     if not functions:
         print(f"No Lambda functions starting with '{args.name_prefix}' found in {args.region}.")
-        print("Have you run './deploy.sh --dryrun' yet?")
+        print("Have you run './deploy.sh --dry-run' yet?")
         sys.exit(1)
 
     verb = "Would trigger" if args.dry_run else "Triggering"
