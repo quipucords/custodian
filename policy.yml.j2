@@ -97,7 +97,7 @@ policies:
 
 
   # Terminates stopped instances whose most recent LaunchTime is more than
-  # 2 days ago, and are not exempt or stop-only. A stopped instance still
+  # 3 days ago, and are not exempt or stop-only. A stopped instance still
   # incurs EBS volume costs.
   #
   # IMPORTANT: instance-age measures LaunchTime (last start time), NOT time
@@ -121,7 +121,7 @@ policies:
       - *stop-only-filter
       - type: instance-age
         op: ge
-        days: 2
+        days: 3
     actions:
 {% if dryrun %}
       []
