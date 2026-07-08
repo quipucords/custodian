@@ -30,7 +30,9 @@ def main():
         "--dry-run", action="store_true", help="List matching functions without invoking them"
     )
     ap.add_argument(
-        "--prefix", default="custodian-", help="Lambda function name prefix (default: custodian-)"
+        "--name-prefix",
+        default="custodian-",
+        help="Lambda function name prefix (default: custodian-)",
     )
     mode_group = ap.add_mutually_exclusive_group()
     mode_group.add_argument(
@@ -53,7 +55,7 @@ def main():
     for page in paginator.paginate():
         for fn in page["Functions"]:
             name = fn["FunctionName"]
-            if not name.startswith(args.prefix):
+            if not name.startswith(args.name_prefix):
                 continue
             if args.live_only and name.endswith("-dryrun"):
                 continue
@@ -63,7 +65,7 @@ def main():
     functions.sort()
 
     if not functions:
-        print(f"No Lambda functions starting with '{args.prefix}' found in {args.region}.")
+        print(f"No Lambda functions starting with '{args.name_prefix}' found in {args.region}.")
         print("Have you run './deploy.sh --dryrun' yet?")
         sys.exit(1)
 
