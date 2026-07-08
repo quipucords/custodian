@@ -203,8 +203,13 @@ if [ -z "$BUCKET" ]; then
     echo "    If a bucket was created, locate and delete it manually."
 elif aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
     echo "    Emptying and deleting: $BUCKET"
-    aws s3 rb "s3://${BUCKET}" --force
-    echo "    Done."
+    if ! aws s3 rb "s3://${BUCKET}" --force; then
+        echo "    WARNING: could not fully empty/delete bucket '$BUCKET'." >&2
+        echo "             It may have versioned objects; delete manually." >&2
+        echo "             Continuing with remaining teardown steps..." >&2
+    else
+        echo "    Done."
+    fi
 else
     echo "    Bucket '$BUCKET' not found (already deleted?)."
 fi
