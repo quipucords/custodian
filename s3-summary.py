@@ -95,8 +95,8 @@ def read_gz(s3_client, bucket, key):
     data = obj["Body"].read()
     try:
         return json.loads(gzip.decompress(data))
-    except OSError:
-        return json.loads(data)  # handle uncompressed edge case
+    except gzip.BadGzipFile:
+        return json.loads(data)  # uncompressed fallback for older c7n output
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────────
@@ -180,7 +180,11 @@ def main():
         selected = sorted_runs if args.all_runs else [sorted_runs[0]]
 
         for timestamp, key in selected:
-            resources = read_gz(s3, bucket, key)
+            try:
+                resources = read_gz(s3, bucket, key)
+            except (ClientError, json.JSONDecodeError) as e:
+                print(f"Warning: could not read {key}: {e}", file=sys.stderr)
+                continue
             if not resources:
                 continue
             run_tag = f"  [{timestamp}]" if args.all_runs else ""
