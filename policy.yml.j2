@@ -266,7 +266,7 @@ policies:
       - not:
           - type: value
             key: Description
-            value: "^ELB "
+            value: "^ELB |^AWS Lambda VPC ENI|^RDSNetworkInterface|^arn:aws:ecs|^VPC Endpoint Interface"
             op: regex
       - type: value
         key: CreateTime
