@@ -15,6 +15,7 @@ import json
 import sys
 
 import boto3
+from botocore.exceptions import ClientError
 
 
 def main():
@@ -47,21 +48,31 @@ def main():
     verb = "Would trigger" if args.dry_run else "Triggering"
     print(f"{verb} {len(functions)} Lambda functions in {args.region}:\n")
 
+    triggered = 0
+    failed = 0
     for fn in functions:
         if args.dry_run:
             print(f"  {fn}")
         else:
-            lam.invoke(
-                FunctionName=fn,
-                InvocationType="Event",  # async: fire-and-forget, all run in parallel
-                Payload=json.dumps({}).encode(),
-            )
-            print(f"  ▶ {fn}")
+            try:
+                lam.invoke(
+                    FunctionName=fn,
+                    InvocationType="Event",  # async: fire-and-forget, all run in parallel
+                    Payload=json.dumps({}).encode(),
+                )
+                print(f"  ▶ {fn}")
+                triggered += 1
+            except ClientError as e:
+                print(f"  ✗ {fn}: {e}", file=sys.stderr)
+                failed += 1
 
     if not args.dry_run:
-        print(f"\nAll {len(functions)} functions triggered.")
-        print("Allow 1-2 minutes for runs to complete, then check results:")
-        print(f"  python3 s3-summary.py --region {args.region}")
+        print(f"\n{triggered} function(s) triggered" + (f", {failed} failed." if failed else "."))
+        if triggered:
+            print("Allow 1-2 minutes for runs to complete, then check results:")
+            print(f"  uv run s3-summary.py --region {args.region}")
+        if failed:
+            sys.exit(1)
 
 
 if __name__ == "__main__":
