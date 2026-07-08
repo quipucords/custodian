@@ -27,7 +27,7 @@ from botocore.exceptions import ClientError
 def get_expected_names(account_id):
     """Return the set of Lambda function names expected to exist."""
     expected = set()
-    for extra in ([], ["--dryrun"]):
+    for extra in ([], ["--dry-run"]):
         try:
             result = subprocess.run(
                 ["uv", "run", "render-policy.py", "--account-id", account_id] + extra,
