@@ -20,6 +20,7 @@ import subprocess
 import sys
 
 import boto3
+from botocore.exceptions import ClientError
 
 
 def get_expected_names(account_id):
@@ -60,7 +61,10 @@ def remove_function(region, fn_name):
         ev.delete_rule(Name=fn_name)
     except ev.exceptions.ResourceNotFoundException:
         pass  # rule already gone — proceed to Lambda deletion
-    lam.delete_function(FunctionName=fn_name)
+    try:
+        lam.delete_function(FunctionName=fn_name)
+    except ClientError as e:
+        raise RuntimeError(f"Failed to delete Lambda {fn_name}: {e}") from e
 
 
 def main():
@@ -117,11 +121,20 @@ def main():
         sys.exit(0)
 
     print()
+    removed = 0
+    failed = 0
     for region, fn in orphans:
-        remove_function(region, fn)
-        print(f"  ✓ removed  {region}  {fn}")
+        try:
+            remove_function(region, fn)
+            print(f"  ✓ removed  {region}  {fn}")
+            removed += 1
+        except (ClientError, RuntimeError) as e:
+            print(f"  ✗ FAILED   {region}  {fn}: {e}", file=sys.stderr)
+            failed += 1
 
-    print(f"\nDone. {len(orphans)} function(s) removed.")
+    print(f"\nDone. {removed} removed, {failed} failed.")
+    if failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
