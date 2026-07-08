@@ -52,16 +52,19 @@ def main():
     # Collect all matching Lambda functions
     functions = []
     paginator = lam.get_paginator("list_functions")
-    for page in paginator.paginate():
-        for fn in page["Functions"]:
-            name = fn["FunctionName"]
-            if not name.startswith(args.name_prefix):
-                continue
-            if args.live_only and name.endswith("-dryrun"):
-                continue
-            if args.dry_run_only and not name.endswith("-dryrun"):
-                continue
-            functions.append(name)
+    try:
+        for page in paginator.paginate():
+            for fn in page["Functions"]:
+                name = fn["FunctionName"]
+                if not name.startswith(args.name_prefix):
+                    continue
+                if args.live_only and name.endswith("-dryrun"):
+                    continue
+                if args.dry_run_only and not name.endswith("-dryrun"):
+                    continue
+                functions.append(name)
+    except ClientError as e:
+        sys.exit(f"Could not list Lambda functions in {args.region}: {e}")
     functions.sort()
 
     if not functions:
