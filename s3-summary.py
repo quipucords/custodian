@@ -31,6 +31,7 @@ import argparse
 import gzip
 import json
 import sys
+import zlib
 from collections import defaultdict
 
 import boto3
@@ -95,7 +96,7 @@ def read_gz(s3_client, bucket, key):
     data = obj["Body"].read()
     try:
         return json.loads(gzip.decompress(data))
-    except gzip.BadGzipFile:
+    except (gzip.BadGzipFile, zlib.error, EOFError):
         return json.loads(data)  # uncompressed fallback for older c7n output
 
 
@@ -182,7 +183,7 @@ def main():
         for timestamp, key in selected:
             try:
                 resources = read_gz(s3, bucket, key)
-            except (ClientError, json.JSONDecodeError) as e:
+            except (ClientError, json.JSONDecodeError, OSError, EOFError) as e:
                 print(f"Warning: could not read {key}: {e}", file=sys.stderr)
                 continue
             if not resources:
