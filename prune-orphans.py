@@ -47,12 +47,16 @@ def list_deployed(region):
     """Return sorted list of custodian-* Lambda function names in a region."""
     lam = boto3.client("lambda", region_name=region)
     paginator = lam.get_paginator("list_functions")
-    return sorted(
-        fn["FunctionName"]
-        for page in paginator.paginate()
-        for fn in page["Functions"]
-        if fn["FunctionName"].startswith("custodian-")
-    )
+    try:
+        return sorted(
+            fn["FunctionName"]
+            for page in paginator.paginate()
+            for fn in page["Functions"]
+            if fn["FunctionName"].startswith("custodian-")
+        )
+    except ClientError as e:
+        print(f"  WARNING: could not list functions in {region}: {e}", file=sys.stderr)
+        return []
 
 
 def remove_function(region, fn_name):
@@ -97,7 +101,16 @@ def main():
     )
     args = ap.parse_args()
 
-    account_id = args.account_id or boto3.client("sts").get_caller_identity()["Account"]
+    if args.account_id:
+        account_id = args.account_id
+    else:
+        try:
+            account_id = boto3.client("sts").get_caller_identity()["Account"]
+        except Exception as e:
+            sys.exit(
+                f"Could not fetch AWS account ID from STS: {e}\n"
+                "Pass --account-id explicitly to skip this call."
+            )
     expected = get_expected_names(account_id)
 
     if args.region:

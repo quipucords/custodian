@@ -90,8 +90,11 @@ def main():
         sys.exit(f"Template variable error in policy.yml.j2: {e}")
 
     if args.output:
-        with open(args.output, "w") as fh:
-            fh.write(rendered)
+        try:
+            with open(args.output, "w", encoding="utf-8") as fh:
+                fh.write(rendered)
+        except OSError as e:
+            sys.exit(f"Could not write to {args.output}: {e}")
         print(f"Written to {args.output}", file=sys.stderr)
     else:
         sys.stdout.write(rendered)
