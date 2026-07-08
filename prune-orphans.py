@@ -60,9 +60,10 @@ def remove_function(region, fn_name):
     lam = boto3.client("lambda", region_name=region)
     ev = boto3.client("events", region_name=region)
     try:
-        targets = ev.list_targets_by_rule(Rule=fn_name)["Targets"]
-        if targets:
-            ev.remove_targets(Rule=fn_name, Ids=[t["Id"] for t in targets])
+        paginator = ev.get_paginator("list_targets_by_rule")
+        target_ids = [t["Id"] for page in paginator.paginate(Rule=fn_name) for t in page["Targets"]]
+        if target_ids:
+            ev.remove_targets(Rule=fn_name, Ids=target_ids)
         ev.delete_rule(Name=fn_name)
     except ev.exceptions.ResourceNotFoundException:
         pass  # rule already gone — proceed to Lambda deletion
