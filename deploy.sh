@@ -111,14 +111,12 @@ for region in $REGIONS; do
     touch "${LOCKDIR}/${region}"
 
     (
-        custodian run \
+        trap 'rm -f "${LOCKDIR}/${region}"' EXIT
+        if uv run custodian run \
             -r "$region" \
             --output-dir "s3://${BUCKET}/${OUTPUT_PREFIX}/${region}" \
             "$RENDERED_POLICY" \
-            >"${LOG_DIR}/${region}.log" 2>&1
-        status=$?
-        rm -f "${LOCKDIR}/${region}"
-        if [ $status -eq 0 ]; then
+            >"${LOG_DIR}/${region}.log" 2>&1; then
             echo "    ✓ ${region}"
         else
             echo "    ✗ ${region} FAILED — see ${LOG_DIR}/${region}.log"
