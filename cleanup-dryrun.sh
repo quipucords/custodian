@@ -7,8 +7,21 @@
 #
 # Usage:
 #   ./cleanup-dryrun.sh
+#   ./cleanup-dryrun.sh --yes   skip confirmation prompt (for CI)
 
 set -euo pipefail
+
+YES=""
+for arg in "$@"; do
+    case $arg in
+        --yes) YES=true ;;
+        *)
+            echo "Unknown argument: $arg"
+            echo "Usage: $0 [--yes]"
+            exit 1
+            ;;
+    esac
+done
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
@@ -20,10 +33,14 @@ echo ""
 echo " This will delete all Lambda functions and EventBridge rules"
 echo " whose names end with '-dryrun' across every AWS region."
 echo ""
-read -rp " Type 'yes' to confirm: " CONFIRM
-if [ "$CONFIRM" != "yes" ]; then
-    echo " Cancelled."
-    exit 0
+if [ "$YES" = true ]; then
+    echo " Confirmation skipped via --yes."
+else
+    read -rp " Type 'yes' to confirm: " CONFIRM
+    if [ "$CONFIRM" != "yes" ]; then
+        echo " Cancelled."
+        exit 0
+    fi
 fi
 echo ""
 echo " Scanning all regions for custodian-*-dryrun functions and rules..."

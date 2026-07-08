@@ -15,8 +15,21 @@
 # Usage:
 #   chmod +x teardown.sh
 #   ./teardown.sh
+#   ./teardown.sh --yes   skip confirmation prompt (for CI)
 
 set -euo pipefail
+
+YES=""
+for arg in "$@"; do
+    case $arg in
+        --yes) YES=true ;;
+        *)
+            echo "Unknown argument: $arg"
+            echo "Usage: $0 [--yes]"
+            exit 1
+            ;;
+    esac
+done
 
 ROLE_NAME="custodian-cleanup-role"
 SSM_BUCKET_PARAM="/custodian/output-bucket-name"
@@ -51,10 +64,14 @@ echo "   - S3 bucket: ${BUCKET_DISPLAY}"
 echo "   - The IAM role '$ROLE_NAME' and all its policies"
 echo "   - The SSM parameter '$SSM_BUCKET_PARAM'"
 echo ""
-read -rp " Type 'yes' to confirm: " CONFIRM
-if [ "$CONFIRM" != "yes" ]; then
-    echo " Teardown cancelled."
-    exit 0
+if [ "$YES" = true ]; then
+    echo " Confirmation skipped via --yes."
+else
+    read -rp " Type 'yes' to confirm: " CONFIRM
+    if [ "$CONFIRM" != "yes" ]; then
+        echo " Teardown cancelled."
+        exit 0
+    fi
 fi
 echo ""
 

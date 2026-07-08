@@ -12,13 +12,15 @@ set -euo pipefail
 
 # ── Parse arguments ──────────────────────────────────────────────────────────────
 DRYRUN=""
+YES=""
 for arg in "$@"; do
     case $arg in
         --dry-run) DRYRUN=true ;;
         --live) DRYRUN=false ;;
+        --yes) YES=true ;;
         *)
             echo "Unknown argument: $arg"
-            echo "Usage: $0 --dry-run | --live"
+            echo "Usage: $0 --dry-run | --live [--yes]"
             exit 1
             ;;
     esac
@@ -27,8 +29,9 @@ done
 if [ -z "$DRYRUN" ]; then
     echo "Error: you must specify a mode."
     echo ""
-    echo "  ./deploy.sh --dry-run  observation only — no resources will be modified"
-    echo "  ./deploy.sh --live     destructive — resources WILL be terminated/deleted"
+    echo "  ./deploy.sh --dry-run       observation only — no resources will be modified"
+    echo "  ./deploy.sh --live          destructive — resources WILL be terminated/deleted"
+    echo "  ./deploy.sh --live --yes    skip confirmation prompt (for CI)"
     echo ""
     exit 1
 fi
@@ -62,10 +65,14 @@ if [ "$DRYRUN" = false ]; then
     echo " AMIs, snapshots, security groups, key pairs, EIPs, ENIs, NAT gateways,"
     echo " and CloudWatch log groups. Ensure you have reviewed dry-run output first."
     echo ""
-    read -rp " Type 'yes' to confirm live deployment: " CONFIRM
-    if [ "$CONFIRM" != "yes" ]; then
-        echo " Deployment cancelled."
-        exit 0
+    if [ "$YES" = true ]; then
+        echo " Confirmation skipped via --yes."
+    else
+        read -rp " Type 'yes' to confirm live deployment: " CONFIRM
+        if [ "$CONFIRM" != "yes" ]; then
+            echo " Deployment cancelled."
+            exit 0
+        fi
     fi
     echo ""
 fi
