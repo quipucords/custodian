@@ -356,6 +356,7 @@ policies:
       role: *role
       runtime: python3.11
     filters:
+      - *keep-filter
       - type: last-write
         days: 30
     actions:
