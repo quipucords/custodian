@@ -18,6 +18,14 @@ for arg in "$@"; do
         --dry-run) DRYRUN=true ;;
         --live) DRYRUN=false ;;
         --yes) YES=true ;;
+        --help)
+            echo "Usage: $0 --dry-run | --live [--yes]"
+            echo ""
+            echo "  --dry-run   Observation mode — Lambdas are deployed but take no action"
+            echo "  --live      Destructive — resources WILL be terminated or deleted"
+            echo "  --yes       Skip confirmation prompt (for CI)"
+            exit 0
+            ;;
         *)
             echo "Unknown argument: $arg"
             echo "Usage: $0 --dry-run | --live [--yes]"
@@ -40,11 +48,11 @@ fi
 if [ "$DRYRUN" = true ]; then
     OUTPUT_PREFIX="dryrun-output"
     MODE_LABEL="Dry-Run — observation only, no resources will be modified"
-    RENDER_FLAG="--dry-run"
+    RENDER_FLAGS=("--dry-run")
 else
     OUTPUT_PREFIX="output"
     MODE_LABEL="Live — resources matching policies WILL be terminated or deleted"
-    RENDER_FLAG=""
+    RENDER_FLAGS=()
 fi
 
 # ── Configuration ────────────────────────────────────────────────────────────────
@@ -95,14 +103,14 @@ RENDERED_POLICY=$(mktemp /tmp/custodian-policy-XXXXXX)
 LOCKDIR=$(mktemp -d)
 trap 'rm -f "$RENDERED_POLICY"; rm -rf "$LOCKDIR"' EXIT
 
-uv run python3 render-policy.py $RENDER_FLAG --account-id "$ACCOUNT_ID" -o "$RENDERED_POLICY"
+uv run python3 render-policy.py "${RENDER_FLAGS[@]}" --account-id "$ACCOUNT_ID" -o "$RENDERED_POLICY"
 echo "    OK. (${RENDERED_POLICY})"
 echo ""
 
 # ── Parallel deployment ──────────────────────────────────────────────────────────
 mkdir -p "$LOG_DIR"
 
-REGIONS=$(aws ec2 describe-regions --query 'Regions[].RegionName' --output text | tr '\t' '\n' | sort)
+REGIONS=$(aws ec2 describe-regions --region "$PRIMARY_REGION" --query 'Regions[].RegionName' --output text | tr '\t' '\n' | sort)
 TOTAL=$(echo "$REGIONS" | wc -l | tr -d ' ')
 
 echo ">>> Deploying to ${TOTAL} regions (up to ${MAX_PARALLEL} in parallel)..."
