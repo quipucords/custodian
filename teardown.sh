@@ -85,17 +85,20 @@ for region in $REGIONS; do
 
     # shellcheck disable=SC2016  # backticks are JMESPath syntax, not shell substitution
     fns=$(aws lambda list-functions \
+        --no-paginate \
         --region "$region" \
         --query 'Functions[?starts_with(FunctionName, `custodian-`)].FunctionName' \
         --output text 2>/dev/null || true)
 
     rules=$(aws events list-rules \
+        --no-paginate \
         --name-prefix "custodian-" \
         --region "$region" \
         --query 'Rules[].Name' \
         --output text 2>/dev/null || true)
 
     log_groups=$(aws logs describe-log-groups \
+        --no-paginate \
         --log-group-name-prefix "/aws/lambda/custodian-" \
         --region "$region" \
         --query 'logGroups[].logGroupName' \
