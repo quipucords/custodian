@@ -226,7 +226,7 @@ This renders the policy template, then deploys Lambda functions to all AWS regio
 After deployment, trigger all Lambda functions in a region immediately rather than waiting for their scheduled time:
 
 ```bash
-uv run invoke-now.py us-east-2
+uv run invoke-now.py --region us-east-2
 ```
 
 Allow 1–2 minutes for the functions to complete, then check for output.
@@ -462,7 +462,7 @@ uv run render-policy.py | head -60
 
 # Redeploy dry-run to review the effect of changes
 ./deploy.sh --dry-run
-uv run invoke-now.py us-east-2
+uv run invoke-now.py --region us-east-2
 uv run s3-summary.py
 
 # When satisfied, deploy live

@@ -138,7 +138,7 @@ if [ "$DRYRUN" = true ]; then
     echo " They write matched resources to S3 but take no action."
     echo ""
     echo " Force an immediate run in a specific region:"
-    echo "   uv run invoke-now.py us-east-1"
+    echo "   uv run invoke-now.py --region us-east-1"
     echo ""
     echo " Review findings:"
     echo "   uv run s3-summary.py"
