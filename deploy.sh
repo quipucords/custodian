@@ -119,7 +119,7 @@ echo "    Logs      : ${LOG_DIR}/"
 echo ""
 
 for region in $REGIONS; do
-    while [ "$(find "$LOCKDIR" -maxdepth 1 -mindepth 1 | wc -l | tr -d ' ')" -ge "$MAX_PARALLEL" ]; do
+    while [ "$(find "$LOCKDIR" -maxdepth 1 -mindepth 1 -not -name 'failed-*' | wc -l | tr -d ' ')" -ge "$MAX_PARALLEL" ]; do
         sleep 2
     done
 
