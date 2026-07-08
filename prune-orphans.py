@@ -35,9 +35,14 @@ def get_expected_names(account_id):
                 text=True,
                 check=True,
             )
+        except FileNotFoundError:
+            sys.exit("uv not found — is it installed and on PATH?")
         except subprocess.CalledProcessError as e:
             sys.exit(f"render-policy.py failed:\n{e.stderr}")
-        data = yaml.safe_load(result.stdout)
+        try:
+            data = yaml.safe_load(result.stdout)
+        except yaml.YAMLError as e:
+            sys.exit(f"render-policy.py produced invalid YAML:\n{e}")
         for policy in data.get("policies", []):
             expected.add(f"custodian-{policy['name']}")
     return expected
@@ -117,7 +122,10 @@ def main():
         regions = [args.region]
     else:
         ec2 = boto3.client("ec2", region_name="us-east-2")
-        regions = sorted(r["RegionName"] for r in ec2.describe_regions()["Regions"])
+        try:
+            regions = sorted(r["RegionName"] for r in ec2.describe_regions()["Regions"])
+        except ClientError as e:
+            sys.exit(f"Could not list AWS regions: {e}")
 
     print(f"Scanning {len(regions)} region(s) for orphaned custodian functions...")
     orphans = []
