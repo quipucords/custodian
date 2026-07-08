@@ -19,6 +19,7 @@ _spec.loader.exec_module(_mod)
 
 tag = _mod.tag
 extract = _mod.extract
+extract_errors = _mod.extract_errors
 
 
 # ── tag() ─────────────────────────────────────────────────────────────────────
@@ -142,3 +143,68 @@ class TestExtract:
         rid, name = extract("some-unknown-policy", {"SomeField": "value"})
         assert rid == "?"
         assert name == ""
+
+
+# ── extract_errors() ──────────────────────────────────────────────────────────
+
+
+class TestExtractErrors:
+    # Real-world log snippet pulled from S3 after the AccessDenied failure.
+    ACCESSDENIED_LOG = """\
+2026-07-08 20:06:44,180 - custodian.policy - DEBUG - Running policy:delete-unused-key-pairs-dryrun resource:key-pair region:us-east-2 c7n:0.9.51
+2026-07-08 20:06:44,495 - custodian.resources.ec2 - DEBUG - Filtered from 23 to 23 ec2
+2026-07-08 20:06:44,570 - custodian.output - DEBUG - metric:PolicyException Count:1 policy:delete-unused-key-pairs-dryrun restype:key-pair
+2026-07-08 20:06:44,570 - custodian.output - ERROR - Error while executing policy
+Traceback (most recent call last):
+  File "/var/task/c7n/policy.py", line 330, in run
+    resources = self.policy.resource_manager.resources()
+  File "/var/task/c7n/query.py", line 549, in resources
+    resources = self.filter_resources(resources)
+botocore.exceptions.ClientError: An error occurred (AccessDenied) when calling the DescribeAutoScalingGroups operation: User: arn:aws:sts::123456789012:assumed-role/custodian-cleanup-role/custodian-delete-unused-key-pairs-dryrun is not authorized to perform: autoscaling:DescribeAutoScalingGroups because no identity-based policy allows the autoscaling:DescribeAutoScalingGroups action
+"""  # noqa: E501
+
+    def test_finds_error_message_and_exception(self):
+        errs = extract_errors(self.ACCESSDENIED_LOG)
+        assert len(errs) == 1
+        msg, exc = errs[0]
+        assert msg == "Error while executing policy"
+        assert "AccessDenied" in exc
+        assert "DescribeAutoScalingGroups" in exc
+
+    def test_clean_log_returns_no_errors(self):
+        log = """\
+2026-07-08 20:00:00,000 - custodian.policy - DEBUG - Running policy:terminate-stale-running-ec2
+2026-07-08 20:00:01,000 - custodian.policy - INFO - policy:terminate-stale-running-ec2 matched 3 resources
+"""  # noqa: E501
+        assert extract_errors(log) == []
+
+    def test_critical_level_is_captured(self):
+        log = """\
+2026-07-08 20:00:00,000 - custodian.policy - CRITICAL - Unrecoverable error
+FatalException: something went wrong
+"""
+        errs = extract_errors(log)
+        assert len(errs) == 1
+        msg, exc = errs[0]
+        assert msg == "Unrecoverable error"
+        assert exc == "FatalException: something went wrong"
+
+    def test_error_without_traceback(self):
+        log = "2026-07-08 20:00:00,000 - custodian.output - ERROR - Standalone error message\n"
+        errs = extract_errors(log)
+        assert len(errs) == 1
+        msg, exc = errs[0]
+        assert msg == "Standalone error message"
+        assert exc is None
+
+    def test_multiple_errors_all_captured(self):
+        log = """\
+2026-07-08 20:00:00,000 - custodian.output - ERROR - First error
+FirstException: boom
+2026-07-08 20:00:01,000 - custodian.output - ERROR - Second error
+SecondException: bang
+"""
+        errs = extract_errors(log)
+        assert len(errs) == 2
+        assert errs[0][0] == "First error"
+        assert errs[1][0] == "Second error"

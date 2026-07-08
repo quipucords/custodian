@@ -100,6 +100,51 @@ def read_gz(s3_client, bucket, key):
         return json.loads(data)  # uncompressed fallback for older c7n output
 
 
+def read_log(s3_client, bucket, key):
+    """Read a custodian-run.log(.gz) text file from S3. Returns content or None if absent."""
+    try:
+        obj = s3_client.get_object(Bucket=bucket, Key=key)
+        data = obj["Body"].read()
+        if key.endswith(".gz"):
+            data = gzip.decompress(data)
+        return data.decode("utf-8", errors="replace")
+    except ClientError as e:
+        if e.response["Error"]["Code"] in ("NoSuchKey", "404"):
+            return None
+        raise
+
+
+def extract_errors(log_content):
+    """Scan a custodian-run.log and return (message, exception) tuples for ERROR/CRITICAL lines."""
+    errors = []
+    lines = log_content.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if " - ERROR - " in line or " - CRITICAL - " in line:
+            # Collect traceback lines until the next dated log entry
+            j = i + 1
+            tb_lines = []
+            while j < len(lines):
+                nxt = lines[j]
+                if nxt and nxt[0].isdigit() and " - " in nxt:
+                    break
+                tb_lines.append(nxt)
+                j += 1
+            exc = next((ln.strip() for ln in reversed(tb_lines) if ln.strip()), None)
+            for sep in (" - ERROR - ", " - CRITICAL - "):
+                if sep in line:
+                    msg = line.split(sep, 1)[1]
+                    break
+            else:
+                msg = line
+            errors.append((msg, exc))
+            i = j
+        else:
+            i += 1
+    return errors
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────────
 
 
@@ -132,7 +177,8 @@ def main():
     # Key layout after stripping prefix:
     #   {region}/{policy}/{YYYY}/{MM}/{DD}/{HH}/resources.json.gz   (7 parts)
 
-    runs = defaultdict(list)  # (region, policy) -> [(timestamp, key), ...]
+    runs = defaultdict(list)  # (region, policy) -> [(timestamp, resources_key), ...]
+    log_runs = defaultdict(list)  # (region, policy) -> [(timestamp, log_key), ...]
 
     paginator = s3.get_paginator("list_objects_v2")
     try:
@@ -140,14 +186,16 @@ def main():
         for page in pages:
             for obj in page.get("Contents", []):
                 key = obj["Key"]
-                if not key.endswith("/resources.json.gz"):
+                is_resources = key.endswith("/resources.json.gz")
+                is_log = key.endswith("/custodian-run.log") or key.endswith("/custodian-run.log.gz")
+                if not is_resources and not is_log:
                     continue
                 rel = key[len(prefix) :]  # strip leading prefix/
                 parts = rel.split("/")
                 # Two supported layouts:
-                #   7 parts: {region}/{policy}/{YYYY}/{MM}/{DD}/{HH}/resources.json.gz
-                #            (deploy-dryrun.sh with --output-dir .../{region})
-                #   6 parts: {policy}/{YYYY}/{MM}/{DD}/{HH}/resources.json.gz
+                #   7 parts: {region}/{policy}/{YYYY}/{MM}/{DD}/{HH}/<file>
+                #            (deploy.sh with --output-dir .../{region})
+                #   6 parts: {policy}/{YYYY}/{MM}/{DD}/{HH}/<file>
                 #            (older deploy without explicit {region} in output path)
                 if len(parts) == 7:
                     region, policy, year, month, day, hour, _ = parts
@@ -161,12 +209,15 @@ def main():
                 if args.policy and args.policy not in policy:
                     continue
                 timestamp = f"{year}/{month}/{day}/{hour}"
-                runs[(region, policy)].append((timestamp, key))
+                if is_resources:
+                    runs[(region, policy)].append((timestamp, key))
+                else:
+                    log_runs[(region, policy)].append((timestamp, key))
     except ClientError as e:
         sys.exit(f"Could not list s3://{bucket}/{prefix}\n{e}")
 
-    if not runs:
-        print(f"No findings found under s3://{bucket}/{prefix}")
+    if not runs and not log_runs:
+        print(f"No output found under s3://{bucket}/{prefix}")
         print("Possible reasons:")
         print("  - Lambda functions have not run yet (check CloudWatch logs)")
         print("  - No resources matched any policy on their last run")
@@ -201,6 +252,41 @@ def main():
         filters.append(f"policy~={args.policy!r}")
     filter_note = f" (filters: {', '.join(filters)})" if filters else ""
     print(f"\n{total} resource(s) identified{filter_note}.")
+
+    # ── Scan custodian-run.log for ERROR/CRITICAL entries ─────────────────────────
+
+    policy_errors = []
+    for region, policy in sorted(log_runs):
+        sorted_log_runs = sorted(log_runs[(region, policy)], reverse=True)
+        selected = sorted_log_runs if args.all_runs else [sorted_log_runs[0]]
+
+        for timestamp, log_key in selected:
+            try:
+                content = read_log(s3, bucket, log_key)
+            except ClientError as e:
+                print(f"Warning: could not read {log_key}: {e}", file=sys.stderr)
+                continue
+            if not content:
+                continue
+            errs = extract_errors(content)
+            if errs:
+                run_tag = f"  [{timestamp}]" if args.all_runs else ""
+                policy_errors.append((region, policy, run_tag, errs))
+
+    if policy_errors:
+        print(f"\n{'!' * 70}")
+        print(f"  POLICY ERRORS — {len(policy_errors)} policy run(s) failed")
+        print(f"{'!' * 70}")
+        for region, policy, run_tag, errs in policy_errors:
+            print(f"\n  {region:<18} {policy}{run_tag}")
+            for msg, exc in errs[:5]:
+                print(f"    ERROR: {msg}")
+                if exc:
+                    print(f"           {exc}")
+            if len(errs) > 5:
+                print(f"    ... and {len(errs) - 5} more error(s)")
+        print("\n  Check CloudWatch Logs for full tracebacks:")
+        print("  CloudWatch → Log groups → /aws/lambda/<policy-name>")
 
 
 if __name__ == "__main__":
