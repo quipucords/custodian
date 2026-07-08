@@ -17,17 +17,42 @@ echo " Cloud Custodian — Remove Dry-Run Lambdas"
 echo "=================================================="
 echo " AWS Account ID : $ACCOUNT_ID"
 echo ""
+echo " This will delete all Lambda functions and EventBridge rules"
+echo " whose names end with '-dryrun' across every AWS region."
+echo ""
+read -rp " Type 'yes' to confirm: " CONFIRM
+if [ "$CONFIRM" != "yes" ]; then
+    echo " Cancelled."
+    exit 0
+fi
+echo ""
 echo " Scanning all regions for custodian-*-dryrun functions and rules..."
 echo " (This runs sequentially across all regions — expect 10–15 minutes.)"
 echo ""
 
 REGIONS=$(aws ec2 describe-regions --query 'Regions[].RegionName' --output text | tr '\t' '\n' | sort)
 FOUND_SOMETHING=false
+DELETE_FAILED=false
+
+# Run an AWS delete command; treat "resource not found" as success (idempotent)
+# but surface any other error and record the failure.
+aws_delete() {
+    local err
+    if ! err=$(aws "$@" 2>&1 >/dev/null); then
+        if echo "$err" | grep -qiE \
+            'ResourceNotFoundException|NoSuchEntity|does not exist|not found'; then
+            return 0 # already gone — expected for idempotent cleanup
+        fi
+        echo "        ERROR: aws $* → ${err}" >&2
+        DELETE_FAILED=true
+    fi
+}
 
 for region in $REGIONS; do
 
     # shellcheck disable=SC2016  # backticks are JMESPath syntax, not shell substitution
     fns=$(aws lambda list-functions \
+        --no-paginate \
         --region "$region" \
         --query 'Functions[?starts_with(FunctionName, `custodian-`)].FunctionName' \
         --output text 2>/dev/null |
@@ -35,6 +60,7 @@ for region in $REGIONS; do
         grep -- '-dryrun$' || true)
 
     rules=$(aws events list-rules \
+        --no-paginate \
         --name-prefix "custodian-" \
         --region "$region" \
         --query 'Rules[].Name' \
@@ -58,25 +84,22 @@ for region in $REGIONS; do
             --output text 2>/dev/null || true)
         if [ -n "$target_ids" ]; then
             # shellcheck disable=SC2086
-            aws events remove-targets \
+            aws_delete events remove-targets \
                 --rule "$rule" \
                 --region "$region" \
-                --ids $target_ids \
-                >/dev/null 2>&1 || true
+                --ids $target_ids
         fi
-        aws events delete-rule \
+        aws_delete events delete-rule \
             --name "$rule" \
-            --region "$region" \
-            2>/dev/null || true
+            --region "$region"
         echo "        Deleted EventBridge rule:  $rule"
     done
 
     # Lambda functions
     for fn in $fns; do
-        aws lambda delete-function \
+        aws_delete lambda delete-function \
             --function-name "$fn" \
-            --region "$region" \
-            2>/dev/null || true
+            --region "$region"
         echo "        Deleted Lambda function:   $fn"
     done
 
@@ -84,6 +107,12 @@ done
 
 if [ "$FOUND_SOMETHING" = false ]; then
     echo "    Nothing found — already removed or never deployed."
+fi
+
+if [ "$DELETE_FAILED" = true ]; then
+    echo "" >&2
+    echo "ERROR: One or more deletions failed — see errors above." >&2
+    exit 1
 fi
 
 echo ""
