@@ -96,8 +96,16 @@ policies:
 {% endif %}
 
 
-  # Terminates stopped instances older than 2 days that are not exempt and not
-  # stop-only. A stopped instance still incurs EBS volume costs.
+  # Terminates stopped instances whose most recent LaunchTime is more than
+  # 2 days ago, and are not exempt or stop-only. A stopped instance still
+  # incurs EBS volume costs.
+  #
+  # IMPORTANT: instance-age measures LaunchTime (last start time), NOT time
+  # in the stopped state. An instance that ran for 3 days and was stopped
+  # 10 minutes ago WILL be terminated on the next daily run. Tag any instance
+  # you intend to stop temporarily with custodian:stop-only=true to prevent
+  # automatic termination regardless of age.
+  #
   # stop-only instances are explicitly excluded: they may remain stopped
   # indefinitely and must never be terminated automatically.
   - name: terminate-stale-stopped-ec2{{ suffix }}
