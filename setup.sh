@@ -15,7 +15,7 @@ set -euo pipefail
 # ── Configuration ───────────────────────────────────────────────────────────────
 ROLE_NAME="custodian-cleanup-role"
 PRIMARY_REGION="us-east-2"
-LOG_RETENTION_DAYS=90
+S3_EXPIRATION_DAYS=90
 SSM_BUCKET_PARAM="/custodian/output-bucket-name"
 
 # Derive account ID from current credentials (fails loudly if not authenticated)
@@ -32,7 +32,7 @@ if aws ssm get-parameter --name "$SSM_BUCKET_PARAM" --region "$PRIMARY_REGION" &
         --query 'Parameter.Value' \
         --output text)
 else
-    UUID=$(python3 -c "import uuid; print(str(uuid.uuid4()))")
+    UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
     BUCKET_NAME="redhat-discovery-custodian-${UUID}"
     aws ssm put-parameter \
         --name "$SSM_BUCKET_PARAM" \
@@ -242,7 +242,7 @@ aws s3api put-bucket-policy \
         }]
     }"
 
-echo "    Setting ${LOG_RETENTION_DAYS}-day object expiration..."
+echo "    Setting ${S3_EXPIRATION_DAYS}-day object expiration..."
 aws s3api put-bucket-lifecycle-configuration \
     --bucket "$BUCKET_NAME" \
     --lifecycle-configuration "{
@@ -250,7 +250,7 @@ aws s3api put-bucket-lifecycle-configuration \
             \"ID\": \"expire-custodian-output\",
             \"Status\": \"Enabled\",
             \"Filter\": {\"Prefix\": \"\"},
-            \"Expiration\": {\"Days\": ${LOG_RETENTION_DAYS}}
+            \"Expiration\": {\"Days\": ${S3_EXPIRATION_DAYS}}
         }]
     }"
 
