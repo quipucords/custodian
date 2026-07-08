@@ -12,7 +12,7 @@ Usage:
     uv run invoke-now.py us-east-1
     uv run invoke-now.py us-east-1 --dry-run        # list without invoking
     uv run invoke-now.py us-east-1 --live-only      # skip -dryrun functions
-    uv run invoke-now.py us-east-1 --dryrun-only    # only -dryrun functions
+    uv run invoke-now.py us-east-1 --dry-run-only    # only -dryrun functions
 """
 
 import argparse
@@ -39,7 +39,7 @@ def main():
         help="Skip dry-run functions (those ending in -dryrun)",
     )
     mode_group.add_argument(
-        "--dryrun-only",
+        "--dry-run-only",
         action="store_true",
         help="Only trigger dry-run functions (those ending in -dryrun)",
     )
@@ -57,7 +57,7 @@ def main():
                 continue
             if args.live_only and name.endswith("-dryrun"):
                 continue
-            if args.dryrun_only and not name.endswith("-dryrun"):
+            if args.dry_run_only and not name.endswith("-dryrun"):
                 continue
             functions.append(name)
     functions.sort()
