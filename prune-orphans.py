@@ -16,11 +16,11 @@ Usage:
 """
 
 import argparse
-import re
 import subprocess
 import sys
 
 import boto3
+import yaml
 from botocore.exceptions import ClientError
 
 
@@ -28,14 +28,18 @@ def get_expected_names(account_id):
     """Return the set of Lambda function names expected to exist."""
     expected = set()
     for extra in ([], ["--dryrun"]):
-        result = subprocess.run(
-            ["uv", "run", "render-policy.py", "--account-id", account_id] + extra,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        for m in re.finditer(r"^\s+-\s+name:\s+(\S+)", result.stdout, re.MULTILINE):
-            expected.add(f"custodian-{m.group(1)}")
+        try:
+            result = subprocess.run(
+                ["uv", "run", "render-policy.py", "--account-id", account_id] + extra,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            sys.exit(f"render-policy.py failed:\n{e.stderr}")
+        data = yaml.safe_load(result.stdout)
+        for policy in data.get("policies", []):
+            expected.add(f"custodian-{policy['name']}")
     return expected
 
 
