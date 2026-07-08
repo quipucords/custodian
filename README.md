@@ -88,13 +88,13 @@ There are no region-based or role-based exceptions. Any resource that must survi
 
 ## Policy Summary
 
-Twelve cleanup policies are defined in `policy.yml.j2` and run in every AWS region to catch accidental resource creation outside the primary region (us-east-2).
+Twelve cleanup policies are defined in `policy.yml.j2` and run in every AWS region to catch accidental resource creation in any region.
 
 | Policy | Resource | Schedule | Trigger |
 |---|---|---|---|
 | `stop-long-running-pet-ec2` | Running EC2 (`stop-only` tagged) | Daily | Running ≥ 24 hours |
 | `terminate-stale-running-ec2` | Running EC2 (untagged) | Daily | Running ≥ 7 days |
-| `terminate-stale-stopped-ec2` | Stopped EC2 (untagged) | Daily | Stopped ≥ 2 days |
+| `terminate-stale-stopped-ec2` | Stopped EC2 (untagged) | Daily | Stopped ≥ 3 days |
 | `delete-unattached-volumes` | Unattached EBS volumes | Daily | Unattached ≥ 3 days |
 | `delete-old-snapshots` | EBS snapshots | Weekly | Age ≥ 30 days |
 | `deregister-old-amis` | AMIs (owned by us) | Weekly | Age ≥ 90 days |
@@ -108,10 +108,10 @@ Twelve cleanup policies are defined in `policy.yml.j2` and run in every AWS regi
 **Notes on specific policies:**
 
 - **`stop-long-running-pet-ec2`** only matches instances tagged `custodian:stop-only = true`. The terminate policies explicitly exclude those instances; they cannot be terminated automatically under any circumstance.
-- **Stopped instances (2 days):** A stopped instance still incurs EBS volume charges. Two days is enough time to notice and tag it if it was intentional.
+- **Stopped instances (3 days):** A stopped instance still incurs EBS volume charges. Three days is enough time to notice and tag it if it was intentional.
 - **AMIs (90 days):** Generous to accommodate long-lived Jenkins pipelines. Any AMI actively referenced by infrastructure must be tagged `custodian:exempt = true`. Deregistering an AMI also deletes its backing EBS snapshots.
 - **Elastic IPs:** There is no creation-time field available for EIPs, so any unassociated EIP is immediately eligible. Tag any EIP you need to keep with `custodian:exempt = true`.
-- **NAT gateways (~$32/month):** Short 3-day threshold because the cost is immediate. Any intentional NAT gateway must be tagged on creation.
+- **NAT gateways:** Short 3-day threshold because the cost is immediate. Any intentional NAT gateway must be tagged on creation.
 - **Snapshot deletion** automatically skips snapshots that still back a registered AMI, so the snapshot and AMI policies are safe to run together.
 - **Stale log groups:** Active custodian Lambda log groups receive writes on every scheduled run and will never exceed the 30-day threshold.
 
