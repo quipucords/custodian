@@ -25,6 +25,19 @@ PRIMARY_REGION="us-east-2"
 # ── Confirm identity ─────────────────────────────────────────────────────────────
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
+# Resolve bucket name before the confirmation banner so the user sees the real
+# bucket name and we still have it after SSM is deleted later in the script.
+if BUCKET=$(aws ssm get-parameter \
+    --name "$SSM_BUCKET_PARAM" \
+    --region "$PRIMARY_REGION" \
+    --query 'Parameter.Value' \
+    --output text 2>/dev/null); then
+    BUCKET_DISPLAY="s3://${BUCKET}"
+else
+    BUCKET_DISPLAY="(SSM parameter not found — bucket name unknown)"
+    BUCKET=""
+fi
+
 echo "=================================================="
 echo " Cloud Custodian Teardown"
 echo "=================================================="
@@ -34,7 +47,7 @@ echo " This will PERMANENTLY delete:"
 echo "   - All Lambda functions matching 'custodian-*' in every region"
 echo "   - All EventBridge rules matching 'custodian-*' in every region"
 echo "   - All CloudWatch log groups '/aws/lambda/custodian-*' in every region"
-echo "   - The S3 output bucket and ALL its contents"
+echo "   - S3 bucket: ${BUCKET_DISPLAY}"
 echo "   - The IAM role '$ROLE_NAME' and all its policies"
 echo "   - The SSM parameter '$SSM_BUCKET_PARAM'"
 echo ""
@@ -44,13 +57,6 @@ if [ "$CONFIRM" != "yes" ]; then
     exit 0
 fi
 echo ""
-
-# ── Resolve bucket name NOW, before we delete SSM ───────────────────────────────
-BUCKET=$(aws ssm get-parameter \
-    --name "$SSM_BUCKET_PARAM" \
-    --region "$PRIMARY_REGION" \
-    --query 'Parameter.Value' \
-    --output text 2>/dev/null || true)
 
 # ── Lambda Functions, EventBridge Rules, CloudWatch Log Groups ──────────────────
 echo ">>> Scanning all regions for custodian resources..."
