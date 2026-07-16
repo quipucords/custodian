@@ -61,7 +61,7 @@ policies:
         key: "tag:custodian:stop-only"
         value: "true"
         op: eq
-      - type: instance-age
+      - type: instance-uptime
         op: ge
         days: 1
     actions:
