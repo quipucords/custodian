@@ -35,12 +35,12 @@ class TestTag:
         assert tag({"Tags": []}) == ""
 
     def test_returns_empty_string_when_name_tag_missing(self):
-        r = {"Tags": [{"Key": "custodian:exempt", "Value": "true"}]}
+        r = {"Tags": [{"Key": "custodian:ignore", "Value": "true"}]}
         assert tag(r) == ""
 
     def test_custom_key(self):
-        r = {"Tags": [{"Key": "custodian:exempt", "Value": "true"}]}
-        assert tag(r, "custodian:exempt") == "true"
+        r = {"Tags": [{"Key": "custodian:ignore", "Value": "true"}]}
+        assert tag(r, "custodian:ignore") == "true"
 
     def test_returns_first_match_only(self):
         r = {"Tags": [{"Key": "Name", "Value": "first"}, {"Key": "Name", "Value": "second"}]}

@@ -58,7 +58,7 @@ The S3 bucket name uses a random UUID rather than the AWS account ID to avoid le
 
 There are three tiers of behavior, controlled by tags on each resource:
 
-### Tier 1 — Full exemption: `custodian:exempt = true`
+### Tier 1 — Completely ignore: `custodian:ignore = true`
 
 The resource is **never touched** — not stopped, not terminated, not deleted — regardless of its age or state. Apply this to anything that must persist indefinitely:
 
@@ -66,7 +66,7 @@ The resource is **never touched** — not stopped, not terminated, not deleted �
 - Long-lived supporting services (HashiCorp Vault, Ansible Automation Platform, etc.)
 - Any resource you explicitly intend to keep running
 
-### Tier 2 — Stop only: `custodian:stop-only = true`
+### Tier 2 — Stop, but don't terminate: `custodian:no-terminate = true`
 
 EC2 instances with this tag will be **stopped** if they have been running for 24 hours or more, but will **never be terminated** regardless of how long they remain stopped. Use this for "pet" instances you need to keep around but don't want running unattended over weekends or holidays. A stopped pet instance can be restarted manually at any time.
 
@@ -80,8 +80,8 @@ There are no region-based or role-based exceptions. Any resource that must survi
 
 | Tag | Value | EC2 behavior | Other resources |
 |---|---|---|---|
-| `custodian:exempt` | `true` | Never stopped or terminated | Never deleted/released/deregistered |
-| `custodian:stop-only` | `true` | Stopped after 24h running; never terminated | N/A (EC2 only) |
+| `custodian:ignore` | `true` | Never stopped or terminated | Never deleted/released/deregistered |
+| `custodian:no-terminate` | `true` | Stopped after 24h running; never terminated | N/A (EC2 only) |
 | *(no tag)* | — | Terminated per age thresholds | Deleted/released per age thresholds |
 
 ---
@@ -92,7 +92,7 @@ Twelve cleanup policies are defined in `policy.yml.j2` and run in every AWS regi
 
 | Policy | Resource | Schedule | Trigger |
 |---|---|---|---|
-| `stop-long-running-pet-ec2` | Running EC2 (`stop-only` tagged) | Daily | Running ≥ 24 hours |
+| `stop-long-running-pet-ec2` | Running EC2 (`no-terminate` tagged) | Daily | Running ≥ 24 hours |
 | `terminate-stale-running-ec2` | Running EC2 (untagged) | Daily | Running ≥ 7 days |
 | `terminate-stale-stopped-ec2` | Stopped EC2 (untagged) | Daily | Stopped ≥ 3 days |
 | `delete-unattached-volumes` | Unattached EBS volumes | Daily | Unattached ≥ 3 days |
@@ -107,10 +107,10 @@ Twelve cleanup policies are defined in `policy.yml.j2` and run in every AWS regi
 
 **Notes on specific policies:**
 
-- **`stop-long-running-pet-ec2`** only matches instances tagged `custodian:stop-only = true`. The terminate policies explicitly exclude those instances; they cannot be terminated automatically under any circumstance.
+- **`stop-long-running-pet-ec2`** only matches instances tagged `custodian:no-terminate = true`. The terminate policies explicitly exclude those instances; they cannot be terminated automatically under any circumstance.
 - **Stopped instances (3 days):** A stopped instance still incurs EBS volume charges. Three days is enough time to notice and tag it if it was intentional.
-- **AMIs (90 days):** Generous to accommodate long-lived Jenkins pipelines. Any AMI actively referenced by infrastructure must be tagged `custodian:exempt = true`. Deregistering an AMI also deletes its backing EBS snapshots.
-- **Elastic IPs:** There is no creation-time field available for EIPs, so any unassociated EIP is immediately eligible. Tag any EIP you need to keep with `custodian:exempt = true`.
+- **AMIs (90 days):** Generous to accommodate long-lived Jenkins pipelines. Any AMI actively referenced by infrastructure must be tagged `custodian:ignore = true`. Deregistering an AMI also deletes its backing EBS snapshots.
+- **Elastic IPs:** There is no creation-time field available for EIPs, so any unassociated EIP is immediately eligible. Tag any EIP you need to keep with `custodian:ignore = true`.
 - **NAT gateways:** Short 3-day threshold because the cost is immediate. Any intentional NAT gateway must be tagged on creation.
 - **Snapshot deletion** automatically skips snapshots that still back a registered AMI, so the snapshot and AMI policies are safe to run together.
 - **Stale log groups:** Active custodian Lambda log groups receive writes on every scheduled run and will never exceed the 30-day threshold.
