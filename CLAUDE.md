@@ -8,7 +8,7 @@ This project deploys [cloud-custodian (c7n)](https://cloudcustodian.io/) to auto
 
 | File | Purpose |
 |---|---|
-| `policy.yml.j2` | Jinja2 template defining all 12 cleanup policies — edit this to change policy behavior |
+| `policy.yml.j2` | Jinja2 template defining all cleanup policies — edit this to change policy behavior |
 | `render-policy.py` | Renders `policy.yml.j2` into a deployable YAML file |
 | `setup.sh` | One-time AWS infra setup: IAM role, S3 bucket, SSM parameter |
 | `deploy.sh` | Deploys Lambda functions to all regions (`--dry-run` or `--live`) |
