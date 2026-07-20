@@ -29,7 +29,7 @@ This project deploys [cloud-custodian (c7n)](https://cloudcustodian.io/) to auto
 - Jenkins workers running on custom base AMIs
 - Supporting services (HashiCorp Vault, Ansible Automation Platform, etc.)
 
-**Problem solved:** Automated, tag-driven cleanup runs on a schedule (Lambda + EventBridge) targeting EC2 instances, AMIs, EBS volumes/snapshots, EIPs, ENIs, NAT gateways, security groups, key pairs, and CloudWatch log groups. Resources tagged `custodian:exempt = true` are never touched; resources tagged `custodian:stop-only = true` are stopped but never terminated.
+**Problem solved:** Automated, tag-driven cleanup runs on a schedule (Lambda + EventBridge) targeting EC2 instances, AMIs, EBS volumes/snapshots, EIPs, ENIs, NAT gateways, security groups, key pairs, and CloudWatch log groups. Resources tagged `custodian:ignore = true` are never touched; resources tagged `custodian:no-terminate = true` are stopped but never terminated.
 
 **Contact:** Brad Smith, principal software engineer on the quipucords/Discovery team.
 

@@ -18,23 +18,23 @@
 vars:
   role: &role arn:aws:iam::{{ account_id }}:role/custodian-cleanup-role
 
-  # Skips any resource tagged custodian:exempt = true.
+  # Skips any resource tagged custodian:ignore = true.
   # Apply this tag to anything that must never be touched automatically
   # (Jenkins AMIs, long-lived supporting services, etc.).
   keep-filter: &keep-filter
     type: value
-    key: "tag:custodian:exempt"
+    key: "tag:custodian:ignore"
     value: "true"
     op: ne
 
-  # Skips EC2 instances tagged custodian:stop-only = true.
+  # Skips EC2 instances tagged custodian:no-terminate = true.
   # These are "pet" instances: they will be stopped if left running too long,
   # but will NEVER be terminated regardless of how long they remain stopped.
   # Use this tag for instances you need to keep around but don't want running
   # unattended over weekends or holidays.
-  stop-only-filter: &stop-only-filter
+  no-terminate-filter: &no-terminate-filter
     type: value
-    key: "tag:custodian:stop-only"
+    key: "tag:custodian:no-terminate"
     value: "true"
     op: ne
 
@@ -44,7 +44,7 @@ policies:
   # EC2 INSTANCES
   # ════════════════════════════════════════════════════════════════════════════
 
-  # Stops "pet" instances (custodian:stop-only = true) that have been running
+  # Stops "pet" instances (custodian:no-terminate = true) that have been running
   # for 24+ hours. These instances are never terminated — only stopped — so
   # they can be restarted manually when needed.
   - name: stop-long-running-pet-ec2{{ suffix }}
@@ -58,7 +58,7 @@ policies:
       - *keep-filter
       - State.Name: running
       - type: value
-        key: "tag:custodian:stop-only"
+        key: "tag:custodian:no-terminate"
         value: "true"
         op: eq
       - type: instance-uptime
@@ -72,8 +72,8 @@ policies:
 {% endif %}
 
 
-  # Terminates running instances older than 7 days that are not exempt and not
-  # stop-only. CI instances are disposable; 7 days is a generous grace period.
+  # Terminates running instances older than 7 days that are not ignore and not
+  # no-terminate. CI instances are disposable; 7 days is a generous grace period.
   - name: terminate-stale-running-ec2{{ suffix }}
     resource: ec2
     mode:
@@ -84,7 +84,7 @@ policies:
     filters:
       - State.Name: running
       - *keep-filter
-      - *stop-only-filter
+      - *no-terminate-filter
       - type: instance-age
         op: ge
         days: 7
@@ -97,16 +97,16 @@ policies:
 
 
   # Terminates stopped instances whose most recent LaunchTime is more than
-  # 3 days ago, and are not exempt or stop-only. A stopped instance still
+  # 3 days ago, and are not ignore or no-terminate. A stopped instance still
   # incurs EBS volume costs.
   #
   # IMPORTANT: instance-age measures LaunchTime (last start time), NOT time
   # in the stopped state. An instance that ran for 3 days and was stopped
   # 10 minutes ago WILL be terminated on the next daily run. Tag any instance
-  # you intend to stop temporarily with custodian:stop-only=true to prevent
+  # you intend to stop temporarily with custodian:no-terminate=true to prevent
   # automatic termination regardless of age.
   #
-  # stop-only instances are explicitly excluded: they may remain stopped
+  # no-terminate instances are explicitly excluded: they may remain stopped
   # indefinitely and must never be terminated automatically.
   - name: terminate-stale-stopped-ec2{{ suffix }}
     resource: ec2
@@ -118,7 +118,7 @@ policies:
     filters:
       - State.Name: stopped
       - *keep-filter
-      - *stop-only-filter
+      - *no-terminate-filter
       - type: instance-age
         op: ge
         days: 3
@@ -134,7 +134,7 @@ policies:
   # EBS VOLUMES & SNAPSHOTS
   # ════════════════════════════════════════════════════════════════════════════
 
-  # Deletes unattached volumes older than 3 days that are not exempt.
+  # Deletes unattached volumes older than 3 days that are not ignore.
   # Volumes in "available" state are not attached to any instance.
   - name: delete-unattached-volumes{{ suffix }}
     resource: ebs
@@ -159,7 +159,7 @@ policies:
 {% endif %}
 
 
-  # Deletes our own snapshots older than 30 days that are not exempt.
+  # Deletes our own snapshots older than 30 days that are not ignore.
   # c7n automatically skips snapshots still backing a registered AMI.
   - name: delete-old-snapshots{{ suffix }}
     resource: ebs-snapshot
@@ -185,10 +185,10 @@ policies:
   # AMIs
   # ════════════════════════════════════════════════════════════════════════════
 
-  # Deregisters our own AMIs older than 90 days that are not exempt.
+  # Deregisters our own AMIs older than 90 days that are not ignore.
   # delete-snapshots: true also removes the EBS snapshots backing the AMI.
   # IMPORTANT: tag any AMI actively referenced by a running configuration with
-  # custodian:exempt = true to prevent premature deregistration.
+  # custodian:ignore = true to prevent premature deregistration.
   - name: deregister-old-amis{{ suffix }}
     resource: ami
     mode:
@@ -214,7 +214,7 @@ policies:
   # NETWORKING
   # ════════════════════════════════════════════════════════════════════════════
 
-  # Releases unassociated Elastic IPs that are not exempt.
+  # Releases unassociated Elastic IPs that are not ignore.
   # Unassociated EIPs cost ~$3.65/month each.
   #
   # Note: Unlike ENIs and NAT gateways, the AWS EIP API (DescribeAddresses)
@@ -223,7 +223,7 @@ policies:
   # to move between instances could be released if the daily Lambda fires during
   # that brief window (~1/1440 probability). The risk is accepted given the daily
   # schedule and the complexity of the alternative (a mark-for-op two-policy
-  # approach). Tag any EIP in active transition with custodian:exempt=true to
+  # approach). Tag any EIP in active transition with custodian:ignore=true to
   # guarantee it is skipped.
   - name: release-unassociated-eips{{ suffix }}
     resource: elastic-ip
@@ -245,7 +245,7 @@ policies:
 {% endif %}
 
 
-  # Deletes detached (available) ENIs older than 1 day that are not exempt.
+  # Deletes detached (available) ENIs older than 1 day that are not ignore.
   # ENIs are left behind after instance termination. The 1-day age avoids
   # false positives from services that create ENIs transiently.
   - name: delete-detached-enis{{ suffix }}
@@ -281,7 +281,7 @@ policies:
 {% endif %}
 
 
-  # Deletes NAT gateways older than 3 days that are not exempt.
+  # Deletes NAT gateways older than 3 days that are not ignore.
   # NAT gateways cost ~$32/month plus data charges.
   - name: delete-old-nat-gateways{{ suffix }}
     resource: nat-gateway
@@ -310,7 +310,7 @@ policies:
   # SECURITY GROUPS & KEY PAIRS
   # ════════════════════════════════════════════════════════════════════════════
 
-  # Deletes security groups not attached to any resource that are not exempt.
+  # Deletes security groups not attached to any resource that are not ignore.
   # The AWS console creates a new security group by default each time you step
   # through the "Launch Instance" wizard.
   # Note: the default VPC security group cannot be deleted; AWS rejects it.
@@ -337,7 +337,7 @@ policies:
 
 
   # Deletes key pairs not associated with any running or stopped EC2 instance
-  # or ASG launch configuration that are not exempt.
+  # or ASG launch configuration that are not ignore.
   # c7n enforces that the `unused` filter must be present in this policy.
   - name: delete-unused-key-pairs{{ suffix }}
     resource: key-pair

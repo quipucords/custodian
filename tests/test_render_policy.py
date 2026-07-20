@@ -181,37 +181,37 @@ class TestBothModes:
         )
 
     def test_terminate_running_ec2_has_stop_only_filter(self, live):
-        # Instances tagged custodian:stop-only=true must never be terminated.
+        # Instances tagged custodian:no-terminate=true must never be terminated.
         # Removing this filter from the template would silently break the guarantee.
         _, _, policies = live
         filters = policies["terminate-stale-running-ec2"]["filters"]
         assert any(
             isinstance(f, dict)
-            and f.get("key") == "tag:custodian:stop-only"
+            and f.get("key") == "tag:custodian:no-terminate"
             and f.get("op") == "ne"
             for f in filters
-        ), "terminate-stale-running-ec2 is missing the stop-only-filter"
+        ), "terminate-stale-running-ec2 is missing the no-terminate-filter"
 
     def test_terminate_stopped_ec2_has_stop_only_filter(self, live):
-        # Instances tagged custodian:stop-only=true must never be terminated.
+        # Instances tagged custodian:no-terminate=true must never be terminated.
         _, _, policies = live
         filters = policies["terminate-stale-stopped-ec2"]["filters"]
         assert any(
             isinstance(f, dict)
-            and f.get("key") == "tag:custodian:stop-only"
+            and f.get("key") == "tag:custodian:no-terminate"
             and f.get("op") == "ne"
             for f in filters
-        ), "terminate-stale-stopped-ec2 is missing the stop-only-filter"
+        ), "terminate-stale-stopped-ec2 is missing the no-terminate-filter"
 
     def test_all_policies_have_keep_filter(self, live):
-        # Every policy must honour custodian:exempt=true. A missing keep-filter
-        # means tagged resources would be modified/deleted despite the exemption.
+        # Every policy must honour custodian:ignore=true. A missing keep-filter
+        # means tagged resources would be modified/deleted despite the ignoreion.
         _, _, policies = live
         for name, policy in policies.items():
             filters = policy.get("filters", [])
             assert any(
                 isinstance(f, dict)
-                and f.get("key") == "tag:custodian:exempt"
+                and f.get("key") == "tag:custodian:ignore"
                 and f.get("op") == "ne"
                 for f in filters
-            ), f"{name} is missing *keep-filter (custodian:exempt check)"
+            ), f"{name} is missing *keep-filter (custodian:ignore check)"
