@@ -96,8 +96,10 @@ Twelve cleanup policies are defined in `policy.yml.j2` and run in every AWS regi
 | `terminate-stale-running-ec2` | Running EC2 (untagged) | Daily | Running ≥ 7 days |
 | `terminate-stale-stopped-ec2` | Stopped EC2 (untagged) | Daily | LaunchTime ≥ 3 days ago |
 | `delete-unattached-volumes` | Unattached EBS volumes | Daily | Created ≥ 3 days ago |
-| `delete-old-snapshots` | EBS snapshots | Weekly | Age ≥ 30 days |
-| `deregister-old-amis` | AMIs (owned by us) | Weekly | Age ≥ 90 days |
+| `delete-old-snapshots` | EBS snapshots | Daily | Age ≥ 7 days |
+| `deregister-stale-protected-launched-amis` | AMIs (`protect-recently-launched-ami` tagged, launched) | Daily | lastLaunchedTime ≥ 30 days ago |
+| `deregister-stale-protected-never-launched-amis` | AMIs (`protect-recently-launched-ami` tagged, never launched) | Daily | Age ≥ 30 days |
+| `deregister-old-unprotected-amis` | AMIs (unprotected) | Daily | Age ≥ 7 days |
 | `release-unassociated-eips` | Elastic IPs | Daily | Unassociated (any age) |
 | `delete-detached-enis` | Network interfaces | Daily | Created ≥ 1 day ago |
 | `delete-old-nat-gateways` | NAT gateways | Daily | Age ≥ 3 days |
@@ -109,7 +111,7 @@ Twelve cleanup policies are defined in `policy.yml.j2` and run in every AWS regi
 
 - **`stop-long-running-pet-ec2`** only matches instances tagged `custodian:no-terminate = true`. The terminate policies explicitly exclude those instances; they cannot be terminated automatically under any circumstance.
 - **Stopped instances (3 days):** A stopped instance still incurs EBS volume charges. The 3-day threshold is measured from **LaunchTime** (when the instance last started), not from when it was stopped. An instance that ran for 3+ days and was stopped moments ago will be terminated on the next daily run. Tag any instance you intend to stop temporarily with `custodian:no-terminate = true`.
-- **AMIs (90 days):** Generous to accommodate long-lived Jenkins pipelines. Any AMI actively referenced by infrastructure must be tagged `custodian:ignore = true`. Deregistering an AMI also deletes its backing EBS snapshots.
+- **AMIs:** Three-tier system. Unprotected AMIs (no `custodian:protect-recently-launched-ami` tag) are deregistered after **7 days** — CI build artifacts are disposable. AMIs tagged `custodian:protect-recently-launched-ami = true` get a **30-day** window measured from `lastLaunchedTime` (or from creation date if never launched); the clock resets automatically each time an instance is launched from the AMI. Tag any AMI that must be kept indefinitely with `custodian:ignore = true`. Deregistering an AMI also deletes its backing EBS snapshots.
 - **Elastic IPs:** There is no creation-time field available for EIPs, so any unassociated EIP is immediately eligible. Tag any EIP you need to keep with `custodian:ignore = true`.
 - **Detached ENIs:** The age filter is based on **creation time**, not detachment time. ENIs managed by AWS services (ELB, Lambda VPC, RDS, ECS, VPC endpoints) are automatically excluded by description prefix and are never deleted.
 - **NAT gateways:** Short 3-day threshold because the cost is immediate. Any intentional NAT gateway must be tagged on creation.
@@ -256,7 +258,7 @@ Each row shows: region, policy name, resource ID, and resource name.
 ### How long to observe
 
 - **Daily policies** will have output within 24 hours.
-- **Weekly policies** (`delete-old-snapshots`, `deregister-old-amis`, `delete-unused-key-pairs`, `delete-stale-log-groups`) will have output within 7 days.
+- **Weekly policies** (`delete-unused-key-pairs`, `delete-stale-log-groups`) will have output within 7 days.
 
 For a thorough review, wait at least **one full week** before going live so every policy has fired at least once. Use `invoke-now.py` to trigger specific regions on demand if you don't want to wait for the schedule.
 
