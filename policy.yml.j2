@@ -159,20 +159,20 @@ policies:
 {% endif %}
 
 
-  # Deletes our own snapshots older than 30 days that are not ignore.
+  # Deletes our own snapshots older than 7 days that are not ignore.
   # c7n automatically skips snapshots still backing a registered AMI.
   - name: delete-old-snapshots{{ suffix }}
     resource: ebs-snapshot
     mode:
       type: periodic
-      schedule: "rate(7 days)"
+      schedule: "rate(1 day)"
       role: *role
       runtime: python3.11
     filters:
       - *keep-filter
       - type: age
         op: ge
-        days: 30
+        days: 7
     actions:
 {% if dryrun %}
       []

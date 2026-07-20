@@ -203,6 +203,18 @@ class TestBothModes:
             for f in filters
         ), "terminate-stale-stopped-ec2 is missing the no-terminate-filter"
 
+    def test_delete_old_snapshots_runs_daily(self, live):
+        _, _, policies = live
+        assert policies["delete-old-snapshots"]["mode"]["schedule"] == "rate(1 day)"
+
+    def test_delete_old_snapshots_uses_7_day_threshold(self, live):
+        _, _, policies = live
+        filters = policies["delete-old-snapshots"]["filters"]
+        assert any(
+            isinstance(f, dict) and f.get("type") == "age" and f.get("days") == 7
+            for f in filters
+        )
+
     def test_all_policies_have_keep_filter(self, live):
         # Every policy must honour custodian:ignore=true. A missing keep-filter
         # means tagged resources would be modified/deleted despite the ignoreion.
