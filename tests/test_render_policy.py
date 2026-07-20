@@ -2,7 +2,7 @@
 Tests for policy.yml.j2 template rendering.
 
 Verifies that both live and dry-run renders produce valid YAML containing
-exactly the expected 14 policies with correct names, account IDs, and
+exactly the expected policies with correct names, account IDs, and
 action blocks for each mode.
 """
 

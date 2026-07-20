@@ -19,7 +19,7 @@ For our use case, c7n runs as a set of **AWS Lambda functions** triggered by **E
 
 | File | Purpose |
 |---|---|
-| `policy.yml.j2` | **Source of truth** — Jinja2 template for all 12 cleanup policies. Edit this file to change policy configuration. |
+| `policy.yml.j2` | **Source of truth** — Jinja2 template defining all cleanup policies. Edit this file to change policy configuration. |
 | `render-policy.py` | Renders `policy.yml.j2` into a deployable YAML file. Called automatically by `deploy.sh`; also useful standalone. |
 | `setup.sh` | One-time AWS infrastructure setup (IAM role, S3 bucket, SSM parameter). Idempotent. |
 | `deploy.sh` | Deploys Lambda functions to all AWS regions. Requires `--dry-run` or `--live` flag. |
@@ -88,7 +88,7 @@ There are no region-based or role-based exceptions. Any resource that must survi
 
 ## Policy Summary
 
-Twelve cleanup policies are defined in `policy.yml.j2` and run in every AWS region to catch accidental resource creation in any region.
+Cleanup policies are defined in `policy.yml.j2` and run in every AWS region to catch accidental resource creation in any region.
 
 | Policy | Resource | Schedule | Trigger |
 |---|---|---|---|
