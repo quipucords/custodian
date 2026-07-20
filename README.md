@@ -94,12 +94,12 @@ Twelve cleanup policies are defined in `policy.yml.j2` and run in every AWS regi
 |---|---|---|---|
 | `stop-long-running-pet-ec2` | Running EC2 (`no-terminate` tagged) | Daily | Running ≥ 24 hours |
 | `terminate-stale-running-ec2` | Running EC2 (untagged) | Daily | Running ≥ 7 days |
-| `terminate-stale-stopped-ec2` | Stopped EC2 (untagged) | Daily | Stopped ≥ 3 days |
-| `delete-unattached-volumes` | Unattached EBS volumes | Daily | Unattached ≥ 3 days |
+| `terminate-stale-stopped-ec2` | Stopped EC2 (untagged) | Daily | LaunchTime ≥ 3 days ago |
+| `delete-unattached-volumes` | Unattached EBS volumes | Daily | Created ≥ 3 days ago |
 | `delete-old-snapshots` | EBS snapshots | Weekly | Age ≥ 30 days |
 | `deregister-old-amis` | AMIs (owned by us) | Weekly | Age ≥ 90 days |
 | `release-unassociated-eips` | Elastic IPs | Daily | Unassociated (any age) |
-| `delete-detached-enis` | Network interfaces | Daily | Detached ≥ 1 day |
+| `delete-detached-enis` | Network interfaces | Daily | Created ≥ 1 day ago |
 | `delete-old-nat-gateways` | NAT gateways | Daily | Age ≥ 3 days |
 | `delete-unused-security-groups` | Security groups | Daily | Unused (any age) |
 | `delete-unused-key-pairs` | EC2 key pairs | Weekly | Not referenced by any instance or ASG |
@@ -108,9 +108,10 @@ Twelve cleanup policies are defined in `policy.yml.j2` and run in every AWS regi
 **Notes on specific policies:**
 
 - **`stop-long-running-pet-ec2`** only matches instances tagged `custodian:no-terminate = true`. The terminate policies explicitly exclude those instances; they cannot be terminated automatically under any circumstance.
-- **Stopped instances (3 days):** A stopped instance still incurs EBS volume charges. Three days is enough time to notice and tag it if it was intentional.
+- **Stopped instances (3 days):** A stopped instance still incurs EBS volume charges. The 3-day threshold is measured from **LaunchTime** (when the instance last started), not from when it was stopped. An instance that ran for 3+ days and was stopped moments ago will be terminated on the next daily run. Tag any instance you intend to stop temporarily with `custodian:no-terminate = true`.
 - **AMIs (90 days):** Generous to accommodate long-lived Jenkins pipelines. Any AMI actively referenced by infrastructure must be tagged `custodian:ignore = true`. Deregistering an AMI also deletes its backing EBS snapshots.
 - **Elastic IPs:** There is no creation-time field available for EIPs, so any unassociated EIP is immediately eligible. Tag any EIP you need to keep with `custodian:ignore = true`.
+- **Detached ENIs:** The age filter is based on **creation time**, not detachment time. ENIs managed by AWS services (ELB, Lambda VPC, RDS, ECS, VPC endpoints) are automatically excluded by description prefix and are never deleted.
 - **NAT gateways:** Short 3-day threshold because the cost is immediate. Any intentional NAT gateway must be tagged on creation.
 - **Snapshot deletion** automatically skips snapshots that still back a registered AMI, so the snapshot and AMI policies are safe to run together.
 - **Stale log groups:** Active custodian Lambda log groups receive writes on every scheduled run and will never exceed the 30-day threshold.
