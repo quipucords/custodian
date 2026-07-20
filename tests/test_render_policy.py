@@ -2,7 +2,7 @@
 Tests for policy.yml.j2 template rendering.
 
 Verifies that both live and dry-run renders produce valid YAML containing
-exactly the expected 12 policies with correct names, account IDs, and
+exactly the expected 14 policies with correct names, account IDs, and
 action blocks for each mode.
 """
 
@@ -21,7 +21,9 @@ EXPECTED_POLICY_NAMES = [
     "terminate-stale-stopped-ec2",
     "delete-unattached-volumes",
     "delete-old-snapshots",
-    "deregister-old-amis",
+    "deregister-stale-protected-launched-amis",
+    "deregister-stale-protected-never-launched-amis",
+    "deregister-old-unprotected-amis",
     "release-unassociated-eips",
     "delete-detached-enis",
     "delete-old-nat-gateways",
@@ -66,7 +68,7 @@ class TestLiveRender:
         assert isinstance(parsed, dict)
         assert "policies" in parsed
 
-    def test_all_12_policies_present(self, live):
+    def test_all_14_policies_present(self, live):
         _, _, policies = live
         for name in EXPECTED_POLICY_NAMES:
             assert name in policies, f"missing policy: {name}"
@@ -115,7 +117,7 @@ class TestDryrunRender:
         assert isinstance(parsed, dict)
         assert "policies" in parsed
 
-    def test_all_12_policies_present_with_suffix(self, dryrun):
+    def test_all_14_policies_present_with_suffix(self, dryrun):
         _, _, policies = dryrun
         for name in EXPECTED_POLICY_NAMES:
             assert f"{name}-dryrun" in policies, f"missing policy: {name}-dryrun"
@@ -170,15 +172,129 @@ class TestBothModes:
             for a in actions
         )
 
-    def test_ami_deregister_has_delete_snapshots_in_live(self, live):
+    # ── deregister-stale-protected-launched-amis ──────────────────────────────
+
+    def test_deregister_stale_protected_launched_has_protect_tag_filter(self, live):
         _, _, policies = live
-        actions = policies["deregister-old-amis"]["actions"]
+        filters = policies["deregister-stale-protected-launched-amis"]["filters"]
+        assert any(
+            isinstance(f, dict)
+            and f.get("key") == "tag:custodian:protect-recently-launched-ami"
+            and f.get("value") == "true"
+            and f.get("op") == "eq"
+            for f in filters
+        )
+
+    def test_deregister_stale_protected_launched_has_last_launched_age_filter(self, live):
+        _, _, policies = live
+        filters = policies["deregister-stale-protected-launched-amis"]["filters"]
+        assert any(
+            isinstance(f, dict)
+            and f.get("type") == "image-attribute"
+            and f.get("attribute") == "lastLaunchedTime"
+            and f.get("value_type") == "age"
+            and f.get("op") == "gte"
+            and f.get("value") == 30
+            for f in filters
+        )
+
+    def test_deregister_stale_protected_launched_has_delete_snapshots_action(self, live):
+        _, _, policies = live
+        actions = policies["deregister-stale-protected-launched-amis"]["actions"]
         assert any(
             isinstance(a, dict)
             and a.get("type") == "deregister"
             and a.get("delete-snapshots") is True
             for a in actions
         )
+
+    def test_deregister_stale_protected_launched_runs_daily(self, live):
+        _, _, policies = live
+        schedule = policies["deregister-stale-protected-launched-amis"]["mode"]["schedule"]
+        assert schedule == "rate(1 day)"
+
+    # ── deregister-stale-protected-never-launched-amis ────────────────────────
+
+    def test_deregister_stale_protected_never_launched_has_protect_tag_filter(self, live):
+        _, _, policies = live
+        filters = policies["deregister-stale-protected-never-launched-amis"]["filters"]
+        assert any(
+            isinstance(f, dict)
+            and f.get("key") == "tag:custodian:protect-recently-launched-ami"
+            and f.get("value") == "true"
+            and f.get("op") == "eq"
+            for f in filters
+        )
+
+    def test_deregister_stale_protected_never_launched_has_absent_filter(self, live):
+        _, _, policies = live
+        filters = policies["deregister-stale-protected-never-launched-amis"]["filters"]
+        assert any(
+            isinstance(f, dict)
+            and f.get("type") == "image-attribute"
+            and f.get("attribute") == "lastLaunchedTime"
+            and f.get("value") == "absent"
+            for f in filters
+        )
+
+    def test_deregister_stale_protected_never_launched_has_30_day_image_age_filter(self, live):
+        _, _, policies = live
+        filters = policies["deregister-stale-protected-never-launched-amis"]["filters"]
+        assert any(
+            isinstance(f, dict) and f.get("type") == "image-age" and f.get("days") == 30
+            for f in filters
+        )
+
+    def test_deregister_stale_protected_never_launched_has_delete_snapshots_action(self, live):
+        _, _, policies = live
+        actions = policies["deregister-stale-protected-never-launched-amis"]["actions"]
+        assert any(
+            isinstance(a, dict)
+            and a.get("type") == "deregister"
+            and a.get("delete-snapshots") is True
+            for a in actions
+        )
+
+    def test_deregister_stale_protected_never_launched_runs_daily(self, live):
+        _, _, policies = live
+        schedule = policies["deregister-stale-protected-never-launched-amis"]["mode"]["schedule"]
+        assert schedule == "rate(1 day)"
+
+    # ── deregister-old-unprotected-amis ───────────────────────────────────────
+
+    def test_deregister_old_unprotected_excludes_protect_tag(self, live):
+        _, _, policies = live
+        filters = policies["deregister-old-unprotected-amis"]["filters"]
+        assert any(
+            isinstance(f, dict)
+            and f.get("key") == "tag:custodian:protect-recently-launched-ami"
+            and f.get("value") == "true"
+            and f.get("op") == "ne"
+            for f in filters
+        )
+
+    def test_deregister_old_unprotected_has_7_day_image_age_filter(self, live):
+        _, _, policies = live
+        filters = policies["deregister-old-unprotected-amis"]["filters"]
+        assert any(
+            isinstance(f, dict) and f.get("type") == "image-age" and f.get("days") == 7
+            for f in filters
+        )
+
+    def test_deregister_old_unprotected_has_delete_snapshots_action(self, live):
+        _, _, policies = live
+        actions = policies["deregister-old-unprotected-amis"]["actions"]
+        assert any(
+            isinstance(a, dict)
+            and a.get("type") == "deregister"
+            and a.get("delete-snapshots") is True
+            for a in actions
+        )
+
+    def test_deregister_old_unprotected_runs_daily(self, live):
+        _, _, policies = live
+        schedule = policies["deregister-old-unprotected-amis"]["mode"]["schedule"]
+        assert schedule == "rate(1 day)"
 
     def test_terminate_running_ec2_has_stop_only_filter(self, live):
         # Instances tagged custodian:no-terminate=true must never be terminated.
@@ -211,8 +327,7 @@ class TestBothModes:
         _, _, policies = live
         filters = policies["delete-old-snapshots"]["filters"]
         assert any(
-            isinstance(f, dict) and f.get("type") == "age" and f.get("days") == 7
-            for f in filters
+            isinstance(f, dict) and f.get("type") == "age" and f.get("days") == 7 for f in filters
         )
 
     def test_all_policies_have_keep_filter(self, live):
