@@ -38,6 +38,15 @@ vars:
     value: "true"
     op: ne
 
+  # Matches AMIs tagged custodian:protect-recently-launched-ami = true.
+  # Use *protect-recently-launched-ami-filter in policies that grant extended
+  # usage-based protection; use op: ne to target unprotected AMIs.
+  protect-recently-launched-ami-filter: &protect-recently-launched-ami-filter
+    type: value
+    key: "tag:custodian:protect-recently-launched-ami"
+    value: "true"
+    op: eq
+
 policies:
 
   # ════════════════════════════════════════════════════════════════════════════
@@ -185,22 +194,84 @@ policies:
   # AMIs
   # ════════════════════════════════════════════════════════════════════════════
 
-  # Deregisters our own AMIs older than 90 days that are not ignore.
-  # delete-snapshots: true also removes the EBS snapshots backing the AMI.
-  # IMPORTANT: tag any AMI actively referenced by a running configuration with
-  # custodian:ignore = true to prevent premature deregistration.
-  - name: deregister-old-amis{{ suffix }}
+  # Deregisters tagged AMIs whose lastLaunchedTime is 30+ days old.
+  # The protection window resets automatically each time an instance is
+  # launched from this AMI; no manual re-tagging is needed.
+  # Note: lastLaunchedTime updates within 24 hours of a launch event.
+  - name: deregister-stale-protected-launched-amis{{ suffix }}
     resource: ami
     mode:
       type: periodic
-      schedule: "rate(7 days)"
+      schedule: "rate(1 day)"
       role: *role
       runtime: python3.11
     filters:
       - *keep-filter
+      - *protect-recently-launched-ami-filter
+      - type: image-attribute
+        attribute: lastLaunchedTime
+        key: "Value"
+        value_type: age
+        op: gte
+        value: 30
+    actions:
+{% if dryrun %}
+      []
+{% else %}
+      - type: deregister
+        delete-snapshots: true
+{% endif %}
+
+
+  # Deregisters tagged AMIs that have never been launched and are 30+ days
+  # old from creation. Falls back to creation date as the protection clock
+  # when no lastLaunchedTime data exists.
+  - name: deregister-stale-protected-never-launched-amis{{ suffix }}
+    resource: ami
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - *protect-recently-launched-ami-filter
+      - type: image-attribute
+        attribute: lastLaunchedTime
+        key: "Value"
+        value: absent
       - type: image-age
         op: ge
-        days: 90
+        days: 30
+    actions:
+{% if dryrun %}
+      []
+{% else %}
+      - type: deregister
+        delete-snapshots: true
+{% endif %}
+
+
+  # Deregisters AMIs not tagged custodian:protect-recently-launched-ami that are
+  # 7+ days old. CI build artifacts and scratch images are disposable;
+  # tag with custodian:protect-recently-launched-ami=true for extended protection
+  # or custodian:ignore=true to exempt permanently.
+  - name: deregister-old-unprotected-amis{{ suffix }}
+    resource: ami
+    mode:
+      type: periodic
+      schedule: "rate(1 day)"
+      role: *role
+      runtime: python3.11
+    filters:
+      - *keep-filter
+      - type: value
+        key: "tag:custodian:protect-recently-launched-ami"
+        value: "true"
+        op: ne
+      - type: image-age
+        op: ge
+        days: 7
     actions:
 {% if dryrun %}
       []
