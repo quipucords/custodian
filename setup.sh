@@ -123,6 +123,7 @@ aws iam put-role-policy \
                 \"Action\": [
                     \"ec2:DescribeInstances\",
                     \"ec2:DescribeImages\",
+                    \"ec2:DescribeImageAttribute\",
                     \"ec2:DescribeVolumes\",
                     \"ec2:DescribeSnapshots\",
                     \"ec2:DescribeTags\",
