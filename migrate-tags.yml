@@ -1,0 +1,166 @@
+# One-time tag migration: adds new tag names alongside existing old tag names.
+#
+# OLD → NEW
+#   custodian:exempt    → custodian:ignore   (all resource types)
+#   custodian:stop-only → custodian:no-terminate (EC2 only)
+#
+# Resources end up with BOTH old and new tags; the old tags are harmless
+# once the Lambda policies have been redeployed with the new names. Remove
+# them manually afterward if desired.
+#
+# USAGE
+#   # Preview (no changes made):
+#   uv run custodian run --dryrun -r <region> --output-dir ./tag-migration-output migrate-tags.yml
+#
+#   # Apply:
+#   uv run custodian run -r <region> --output-dir ./tag-migration-output migrate-tags.yml
+#
+#   # All regions at once:
+#   for region in $(aws ec2 describe-regions --region us-east-2 \
+#         --query 'Regions[*].RegionName' --output text | tr '\t' '\n'); do
+#       mkdir -p ./tag-migration-output/"${region}"
+#       uv run custodian run --dryrun \
+#         -r "${region}" \
+#         --output-dir ./tag-migration-output/"${region}" \
+#         migrate-tags.yml
+#   done
+#
+# Running more than once is safe — adding a tag that already exists is a no-op.
+
+policies:
+
+  # ── custodian:exempt → custodian:ignore ────────────────────────────────
+
+  - name: migrate-exempt-tag-ec2
+    resource: ec2
+    filters:
+      - type: value
+        key: "tag:custodian:exempt"
+        value: "true"
+        op: eq
+    actions:
+      - type: tag
+        key: "custodian:ignore"
+        value: "true"
+
+  - name: migrate-exempt-tag-ebs
+    resource: ebs
+    filters:
+      - type: value
+        key: "tag:custodian:exempt"
+        value: "true"
+        op: eq
+    actions:
+      - type: tag
+        key: "custodian:ignore"
+        value: "true"
+
+  - name: migrate-exempt-tag-ebs-snapshot
+    resource: ebs-snapshot
+    filters:
+      - type: value
+        key: "tag:custodian:exempt"
+        value: "true"
+        op: eq
+    actions:
+      - type: tag
+        key: "custodian:ignore"
+        value: "true"
+
+  - name: migrate-exempt-tag-ami
+    resource: ami
+    filters:
+      - type: value
+        key: "tag:custodian:exempt"
+        value: "true"
+        op: eq
+    actions:
+      - type: tag
+        key: "custodian:ignore"
+        value: "true"
+
+  - name: migrate-exempt-tag-elastic-ip
+    resource: elastic-ip
+    filters:
+      - type: value
+        key: "tag:custodian:exempt"
+        value: "true"
+        op: eq
+    actions:
+      - type: tag
+        key: "custodian:ignore"
+        value: "true"
+
+  - name: migrate-exempt-tag-eni
+    resource: eni
+    filters:
+      - type: value
+        key: "tag:custodian:exempt"
+        value: "true"
+        op: eq
+    actions:
+      - type: tag
+        key: "custodian:ignore"
+        value: "true"
+
+  - name: migrate-exempt-tag-nat-gateway
+    resource: nat-gateway
+    filters:
+      - type: value
+        key: "tag:custodian:exempt"
+        value: "true"
+        op: eq
+    actions:
+      - type: tag
+        key: "custodian:ignore"
+        value: "true"
+
+  - name: migrate-exempt-tag-security-group
+    resource: security-group
+    filters:
+      - type: value
+        key: "tag:custodian:exempt"
+        value: "true"
+        op: eq
+    actions:
+      - type: tag
+        key: "custodian:ignore"
+        value: "true"
+
+  - name: migrate-exempt-tag-key-pair
+    resource: key-pair
+    filters:
+      - type: value
+        key: "tag:custodian:exempt"
+        value: "true"
+        op: eq
+    actions:
+      - type: tag
+        key: "custodian:ignore"
+        value: "true"
+
+  - name: migrate-exempt-tag-log-group
+    resource: log-group
+    filters:
+      - type: value
+        key: "tag:custodian:exempt"
+        value: "true"
+        op: eq
+    actions:
+      - type: tag
+        key: "custodian:ignore"
+        value: "true"
+
+  # ── custodian:stop-only → custodian:no-terminate (EC2 only) ──────────────
+
+  - name: migrate-stop-only-tag-ec2
+    resource: ec2
+    filters:
+      - type: value
+        key: "tag:custodian:stop-only"
+        value: "true"
+        op: eq
+    actions:
+      - type: tag
+        key: "custodian:no-terminate"
+        value: "true"

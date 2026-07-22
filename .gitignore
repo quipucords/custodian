@@ -5,6 +5,7 @@ cloud-custodian/
 deploy-dryrun-logs/
 deploy-logs/
 dryrun-output/
+tag-migration-output/
 
 # Python
 .venv/
