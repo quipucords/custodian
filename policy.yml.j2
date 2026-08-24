@@ -169,7 +169,8 @@ policies:
 
 
   # Deletes our own snapshots older than 7 days that are not ignore.
-  # c7n automatically skips snapshots still backing a registered AMI.
+  # The unused filter excludes snapshots still backing a registered AMI or
+  # referenced by an ASG launch config or launch template.
   - name: delete-old-snapshots{{ suffix }}
     resource: ebs-snapshot
     mode:
@@ -182,6 +183,7 @@ policies:
       - type: age
         op: ge
         days: 7
+      - type: unused
     actions:
 {% if dryrun %}
       []
@@ -198,6 +200,8 @@ policies:
   # The protection window resets automatically each time an instance is
   # launched from this AMI; no manual re-tagging is needed.
   # Note: lastLaunchedTime updates within 24 hours of a launch event.
+  # The unused filter skips any such AMI that still backs a live instance or
+  # ASG launch config/template, so in-use images are never deregistered.
   - name: deregister-stale-protected-launched-amis{{ suffix }}
     resource: ami
     mode:
@@ -214,6 +218,7 @@ policies:
         value_type: age
         op: gte
         value: 30
+      - type: unused
     actions:
 {% if dryrun %}
       []
@@ -225,7 +230,8 @@ policies:
 
   # Deregisters tagged AMIs that have never been launched and are 30+ days
   # old from creation. Falls back to creation date as the protection clock
-  # when no lastLaunchedTime data exists.
+  # when no lastLaunchedTime data exists. The unused filter additionally
+  # skips any such AMI still referenced by an ASG launch config/template.
   - name: deregister-stale-protected-never-launched-amis{{ suffix }}
     resource: ami
     mode:
@@ -243,6 +249,7 @@ policies:
       - type: image-age
         op: ge
         days: 30
+      - type: unused
     actions:
 {% if dryrun %}
       []
@@ -255,7 +262,8 @@ policies:
   # Deregisters AMIs not tagged custodian:protect-recently-launched-ami that are
   # 7+ days old. CI build artifacts and scratch images are disposable;
   # tag with custodian:protect-recently-launched-ami=true for extended protection
-  # or custodian:ignore=true to exempt permanently.
+  # or custodian:ignore=true to exempt permanently. The unused filter skips any
+  # such AMI that still backs a live instance or ASG launch config/template.
   - name: deregister-old-unprotected-amis{{ suffix }}
     resource: ami
     mode:
@@ -272,6 +280,7 @@ policies:
       - type: image-age
         op: ge
         days: 7
+      - type: unused
     actions:
 {% if dryrun %}
       []
