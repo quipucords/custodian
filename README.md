@@ -124,21 +124,34 @@ Cleanup policies are defined in `policy.yml.j2` and run in every AWS region to c
 
 ### 1. AWS CLI
 
-Install and configure the AWS CLI with credentials that have full admin access:
+Install and configure the AWS CLI with credentials that have full admin access to the AWS account:
 
 ```bash
-aws configure
-# or export credentials:
-# export AWS_ACCESS_KEY_ID=...
-# export AWS_SECRET_ACCESS_KEY=...
-# export AWS_DEFAULT_REGION=us-east-2
+aws sts get-caller-identity   # confirm the session is active
 ```
 
-Verify authentication:
+If using **IAM Identity Center (SSO)**, log in first:
 
 ```bash
+aws login
 aws sts get-caller-identity
 ```
+
+#### Exporting credentials when using IAM Identity Center (SSO)
+
+The AWS CLI (`aws` commands) and the Python SDK (botocore, used internally by c7n) manage SSO token refresh through separate code paths. When botocore tries to refresh the OAuth2 grant issued by `aws login`, it may fail with:
+
+```
+ValidationException: The provided authorization grant is invalid, expired, revoked, or malformed
+```
+
+This happens even though the `aws` CLI itself is working fine. The fix is to export static short-lived credentials from the active SSO session into environment variables before running any Python-based script (`deploy.sh`, `invoke-now.py`, `s3-summary.py`, `prune-orphans.py`):
+
+```bash
+eval "$(aws configure export-credentials --format env)"
+```
+
+This converts the SSO session into `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` environment variables. botocore reads these directly and never needs to refresh the SSO grant. The exported credentials are short-lived (typically 1 hour) and scoped to the current shell session. You only need to run this once per shell session — all subsequent commands in the same shell inherit the variables.
 
 ### 2. Python 3.10.2 or later
 
@@ -188,6 +201,7 @@ The script creates:
 Before deploying any Lambda functions, you can render the policy template and run a one-shot local check directly from your terminal. This executes immediately, takes no action, and writes results to a local directory:
 
 ```bash
+eval "$(aws configure export-credentials --format env)"
 # Render the template to a temporary file and run a local dryrun
 uv run render-policy.py --dry-run | \
     uv run custodian run --dryrun -r us-east-2 --output-dir ./local-dryrun /dev/stdin
@@ -219,6 +233,7 @@ Dry-run Lambda functions use a `-dryrun` name suffix (e.g., `custodian-terminate
 
 ```bash
 chmod +x deploy.sh
+eval "$(aws configure export-credentials --format env)"
 ./deploy.sh --dry-run
 ```
 
@@ -273,6 +288,7 @@ Once the team is satisfied with dry-run findings:
 ### Step 1 — Deploy live Lambda functions
 
 ```bash
+eval "$(aws configure export-credentials --format env)"
 ./deploy.sh --live
 ```
 
@@ -463,7 +479,8 @@ To change any policy (thresholds, schedules, filters, resource types):
 # Optional: preview the rendered policy before deploying
 uv run render-policy.py | head -60
 
-# Redeploy dry-run to review the effect of changes
+# Export SSO credentials, then redeploy dry-run to review the effect of changes
+eval "$(aws configure export-credentials --format env)"
 ./deploy.sh --dry-run
 uv run invoke-now.py --region us-east-2
 uv run s3-summary.py
@@ -485,6 +502,8 @@ Delete the policy block from `policy.yml.j2` and redeploy. The Lambda function a
 `prune-orphans.py` automates this: it renders the current template, compares the expected function names against what is actually deployed across all regions, and removes the difference.
 
 ```bash
+eval "$(aws configure export-credentials --format env)"
+
 # Preview what would be removed
 uv run prune-orphans.py --dry-run
 
