@@ -203,8 +203,8 @@ Before deploying any Lambda functions, you can render the policy template and ru
 ```bash
 eval "$(aws configure export-credentials --format env)"
 # Render the template to a temporary file and run a local dryrun
-uv run render-policy.py --dry-run | \
-    uv run custodian run --dryrun -r us-east-2 --output-dir ./local-dryrun /dev/stdin
+uv run render-policy.py --dry-run > /tmp/policy-dryrun.yml
+uv run custodian run --dryrun -r us-east-2 --output-dir ./local-dryrun /tmp/policy-dryrun.yml
 ```
 
 Inspect matches:
