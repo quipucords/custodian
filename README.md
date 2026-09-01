@@ -23,7 +23,7 @@ For our use case, c7n runs as a set of **AWS Lambda functions** triggered by **E
 | `render-policy.py` | Renders `policy.yml.j2` into a deployable YAML file. Called automatically by `deploy.sh`; also useful standalone. |
 | `setup.sh` | One-time AWS infrastructure setup (IAM role, S3 bucket, SSM parameter). Idempotent. |
 | `deploy.sh` | Deploys Lambda functions to all AWS regions. Requires `--dry-run` or `--live` flag. |
-| `invoke-now.py` | Manually triggers all custodian Lambda functions in a region immediately, without waiting for the schedule. |
+| `invoke-now.py` | Manually triggers all custodian Lambda functions immediately, without waiting for the schedule. |
 | `s3-summary.py` | Reads S3 output from Lambda runs and prints a compact per-resource summary. |
 | `prune-orphans.py` | Removes Lambda functions and EventBridge rules for policies deleted from `policy.yml.j2`. |
 | `cleanup-dryrun.sh` | Removes dry-run Lambda functions and EventBridge rules after going live. |
@@ -241,9 +241,13 @@ This renders the policy template, then deploys Lambda functions to all AWS regio
 
 ### Force an immediate run (don't wait for the schedule)
 
-After deployment, trigger all Lambda functions in a region immediately rather than waiting for their scheduled time:
+After deployment, trigger all Lambda functions (optionally in a specific region) immediately rather than waiting for their scheduled time:
 
 ```bash
+# Invoke all functions in all regions
+uv run invoke-now.py
+
+# Or limit to functions in a specific region
 uv run invoke-now.py --region us-east-2
 ```
 
@@ -275,7 +279,7 @@ Each row shows: region, policy name, resource ID, and resource name.
 - **Daily policies** will have output within 24 hours.
 - **Weekly policies** (`delete-unused-key-pairs`, `delete-stale-log-groups`) will have output within 7 days.
 
-For a thorough review, wait at least **one full week** before going live so every policy has fired at least once. Use `invoke-now.py` to trigger specific regions on demand if you don't want to wait for the schedule.
+For a thorough review, wait at least **one full week** before going live so every policy has fired at least once. Use `invoke-now.py` to trigger on demand if you don't want to wait for the schedule.
 
 If a policy produces no S3 output for a given region, either nothing matched or the Lambda has not yet fired. Check CloudWatch logs to confirm execution (see [CloudWatch Logs](#cloudwatch-logs) below).
 
@@ -482,7 +486,7 @@ uv run render-policy.py | head -60
 # Export SSO credentials, then redeploy dry-run to review the effect of changes
 eval "$(aws configure export-credentials --format env)"
 ./deploy.sh --dry-run
-uv run invoke-now.py --region us-east-2
+uv run invoke-now.py
 uv run s3-summary.py
 
 # When satisfied, deploy live
