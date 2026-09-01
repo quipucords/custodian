@@ -153,6 +153,15 @@ eval "$(aws configure export-credentials --format env)"
 
 This converts the SSO session into `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` environment variables. botocore reads these directly and never needs to refresh the SSO grant. The exported credentials are short-lived (typically 1 hour) and scoped to the current shell session. You only need to run this once per shell session — all subsequent commands in the same shell inherit the variables.
 
+If you encounter unexpected errors running scripts due to expired or invalid credentials, you may want to explicitly `unset` the AWS environment variables before logging in and recreating the AWS environment variables.
+
+```bash
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_CREDENTIAL_EXPIRATION
+aws login
+aws sts get-caller-identity
+eval "$(aws configure export-credentials --format env)"
+```
+
 ### 2. Python 3.10.2 or later
 
 ```bash
