@@ -157,8 +157,8 @@ def main():
     ap.add_argument("--bucket", help="S3 bucket name (default: read from SSM)")
     ap.add_argument(
         "--prefix",
-        default="dryrun-output",
-        help="S3 key prefix — use 'output' for live runs (default: dryrun-output)",
+        default="output",
+        help="S3 key prefix — use 'dryrun-output' for dryrun runs (default: output)",
     )
     ap.add_argument("--region", help="Show only this AWS region")
     ap.add_argument("--policy", help="Show only policies whose name contains this string")
